@@ -2,14 +2,14 @@
 import path from 'path';
 
 const nextConfig = {
-  // Disable linting during build process
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-
-  // Fix for image domains
+  // Fix for image domains - using remotePatterns instead of deprecated domains
   images: {
-    domains: ["res.cloudinary.com"],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+      },
+    ],
     unoptimized: true,
   },
 
@@ -38,7 +38,11 @@ const nextConfig = {
   distDir: '.next',
   transpilePackages: [],
 
+  // Turbopack configuration (Next.js 16+ uses Turbopack by default)
+  turbopack: {},
+
   // Enhanced webpack config with proper path resolution
+  // Note: This will be used when --webpack flag is explicitly passed
   webpack: (config, { dev, isServer }) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,
