@@ -3,11 +3,11 @@ import type { NextRequest } from 'next/server'
 import jwt from 'jsonwebtoken';
 import { jwtVerify } from 'jose';
  
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // Get the path of the request
   const path = request.nextUrl.pathname;
   
-  // Skip middleware for non-admin paths, API routes, and static assets
+  // Skip proxy for non-admin paths, API routes, and static assets
   if (!path.startsWith('/admin') || 
       path.startsWith('/api/') || 
       path.startsWith('/_next/') ||
@@ -89,7 +89,7 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-// Configure which paths should trigger the middleware
+// Configure which paths should trigger the proxy
 export const config = {
   matcher: [
     '/admin/:path*',
