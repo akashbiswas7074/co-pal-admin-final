@@ -3,6 +3,10 @@ import { Star } from "lucide-react";
 
 import { getLatestProductReviews } from "@/lib/database/actions/admin/products/products.actions";
 import SwitchComponent from "@/components/admin/dashboard/reviews/switch";
+
+// Force dynamic rendering since this page uses headers() for authentication
+export const dynamic = 'force-dynamic';
+
 const ReviewsPage = async () => {
   const all_reviews = await getLatestProductReviews();
   const reviews = all_reviews?.reviews;

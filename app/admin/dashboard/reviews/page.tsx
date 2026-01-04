@@ -6,6 +6,9 @@ import SwitchComponent from "@/components/admin/dashboard/reviews/switch";
 import DeleteReviewButton from "@/components/admin/dashboard/reviews/delete-button";
 import { Group } from "@mantine/core";
 
+// Force dynamic rendering since this page uses headers() for authentication
+export const dynamic = 'force-dynamic';
+
 const ReviewsPage = async () => {
   let all_reviews = null;
   let reviews = [];
