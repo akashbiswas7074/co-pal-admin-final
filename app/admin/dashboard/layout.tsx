@@ -240,9 +240,24 @@ const navigationItems: NavSection[] = [
         label: "Website Settings"
       },
       {
+        href: "/admin/dashboard/navbar-settings",
+        icon: <FaRegRectangleList size={20} />,
+        label: "Navbar Global Settings"
+      },
+      {
         href: "/admin/dashboard/site-footer",
         icon: <FaRegRectangleList size={20} />,
-        label: "Site Footer"
+        label: "Site Footer Links"
+      },
+      {
+        href: "/admin/dashboard/footer-settings",
+        icon: <FaRegRectangleList size={20} />,
+        label: "Footer Global Settings"
+      },
+      {
+        href: "/admin/dashboard/preloader-settings",
+        icon: <FaRegRectangleList size={20} />,
+        label: "Preloader Settings"
       },
       {
         href: "/admin/dashboard/return-policy",

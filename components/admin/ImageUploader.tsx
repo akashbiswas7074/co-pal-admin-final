@@ -45,14 +45,16 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
     setUploadError(null);
 
     try {
-      // Convert image to WebP format
+      // Convert image to WebP format (unless it's an SVG)
       let fileToUpload = file;
-      try {
-        const webpBlob = await convertToWebP(file);
-        fileToUpload = new File([webpBlob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
-      } catch (webpError) {
-        console.error('WebP conversion failed, uploading original file:', webpError);
-        // Fallback to original file if conversion fails
+      if (file.type !== 'image/svg+xml') {
+        try {
+          const webpBlob = await convertToWebP(file);
+          fileToUpload = new File([webpBlob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
+        } catch (webpError) {
+          console.error('WebP conversion failed, uploading original file:', webpError);
+          // Fallback to original file if conversion fails
+        }
       }
 
       const formData = new FormData();
@@ -146,7 +148,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
           ref={fileInputRef}
           id={`file-${label.replace(/\s+/g, '-').toLowerCase()}`}
           type="file"
-          accept="image/*"
+          accept="image/*, .svg"
           className="hidden"
           onChange={handleFileChange}
           disabled={isUploading}
