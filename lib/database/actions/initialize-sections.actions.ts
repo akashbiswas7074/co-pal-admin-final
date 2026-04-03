@@ -155,6 +155,13 @@ export async function initializeDefaultSections() {
         description: "Section showcasing influencer content and social proof"
       },
       {
+        name: "Collection Highlight Grid",
+        sectionId: "collection-highlights",
+        isVisible: true,
+        order: 35,
+        description: "Eye-catching grid of product collections and highlights"
+      },
+      {
         name: "All Products",
         sectionId: "all-products",
         isVisible: true,
