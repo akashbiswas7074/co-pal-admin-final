@@ -28,7 +28,6 @@ import { getSamplesByProductId } from "@/lib/database/actions/sample.actions";
 interface FormValues {
   name: string;
   description: string;
-  brand: string;
   sku: string;
   discount: number;
   longDescription: string;
@@ -63,7 +62,6 @@ const UpdateProductComponent: React.FC<{ data: any; setOpen: any }> = ({
     initialValues: {
       name: "",
       description: "",
-      brand: "",
       sku: "",
       discount: 0,
       longDescription: "",
@@ -105,7 +103,6 @@ const UpdateProductComponent: React.FC<{ data: any; setOpen: any }> = ({
       form.setValues({
         name: data.name,
         description: data.description || "",
-        brand: data.brand || "",
         sku: data?.sku || "",
         discount: data.discount || 0,
         longDescription: data?.longDescription,
@@ -157,7 +154,6 @@ const UpdateProductComponent: React.FC<{ data: any; setOpen: any }> = ({
           discount: values.discount,
           name: values.name,
           description: values.description,
-          brand: values.brand,
           details: values.details,
           questions: values.questions,
           benefits: values.benefits,
@@ -187,9 +183,7 @@ const UpdateProductComponent: React.FC<{ data: any; setOpen: any }> = ({
           undefined, // stock
           undefined, // tagValues
           undefined, // shippingDimensions
-          values.brand,
-          values.sample5mlPrice,
-          values.sample10mlPrice
+          undefined  // samples (legacy component doesn't support dynamic samples yet)
         ).then((res) => {
           if (res?.success) {
             setLoading(false);
@@ -253,13 +247,7 @@ const UpdateProductComponent: React.FC<{ data: any; setOpen: any }> = ({
               />
             </Box>
 
-            <Box mb="md">
-              <TextInput
-                label="Brand"
-                placeholder="Enter product brand"
-                {...form.getInputProps("brand")}
-              />
-            </Box>
+
 
             <Box mb="md">
               <TextInput

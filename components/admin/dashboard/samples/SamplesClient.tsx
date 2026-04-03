@@ -55,8 +55,11 @@ interface Sample {
   status: "available" | "unavailable";
   discount: number;
   image?: string;
+  publicId?: string;
   productId?: string;
   variant?: string;
+  value?: number;
+  unit?: string;
 }
 
 interface SampleSettings {
@@ -73,6 +76,7 @@ interface ProductSample {
   sampleName: string;
   price: number;
   image: string;
+  samples?: Array<{ value: string; unit: string; price: string }>;
 }
 
 interface SamplesClientProps {
@@ -93,12 +97,32 @@ export default function SamplesClient({ initialData, initialSettings }: SamplesC
   const [fetchingProducts, setFetchingProducts] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [importingId, setImportingId] = useState<string | null>(null);
-  const [importPrices, setImportPrices] = useState<Record<string, { price5ml: number, price10ml: number, enabled5ml: boolean, enabled10ml: boolean }>>({});
+  const [importPrices, setImportPrices] = useState<Record<string, Array<{ price: number, enabled: boolean, value: number, unit: string }>>>({});
 
   /* --- edit modal --- */
   const [editOpened, { open: openEdit, close: closeEdit }] = useDisclosure(false);
   const [editingSample, setEditingSample] = useState<Sample | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", price: 60, status: "available" as const, discount: 0, variant: "5ml" });
+  const [editForm, setEditForm] = useState<{
+    name: string;
+    image: string;
+    publicId: string;
+    productId: string;
+    status: "available" | "unavailable";
+  }>({ 
+    name: "", 
+    status: "available", 
+    image: "",
+    publicId: "",
+    productId: "",
+  });
+
+  const [editFormVariants, setEditFormVariants] = useState<Array<{
+    value: number;
+    unit: string;
+    price: number;
+    discount: number;
+    id?: string;
+  }>>([{ value: 5, unit: "ml", price: 60, discount: 0, id: Math.random().toString() }]);
 
   /* --- settings --- */
   const defaultSettings: SampleSettings = {
@@ -131,15 +155,20 @@ export default function SamplesClient({ initialData, initialSettings }: SamplesC
         );
         setProductSamples(filteredRes);
 
-        // Initialize import prices
+        // Initialize import prices for each product's predefined samples
         const initialPrices: typeof importPrices = {};
         filteredRes.forEach((ps: ProductSample) => {
-          initialPrices[ps.productId] = {
-            price5ml: 60,
-            price10ml: 100,
-            enabled5ml: true,
-            enabled10ml: true,
-          };
+          if (ps.samples && ps.samples.length > 0) {
+            initialPrices[ps.productId] = ps.samples.map(s => ({
+              price: Number(s.price) || 60,
+              enabled: true,
+              value: Number(s.value) || 5,
+              unit: s.unit || "ml"
+            }));
+          } else {
+            // Default blank sample if none defined
+            initialPrices[ps.productId] = [{ price: 60, enabled: true, value: 5, unit: "ml" }];
+          }
         });
         setImportPrices(initialPrices);
       } catch (error) {
@@ -188,32 +217,96 @@ export default function SamplesClient({ initialData, initialSettings }: SamplesC
     };
   };
 
-  /* ── Edit sample ── */
   const handleOpenEdit = (sample: Sample) => {
     setEditingSample(sample);
     setEditForm({
       name: sample.name,
-      price: sample.price,
       status: sample.status,
-      discount: sample.discount || 0,
-      variant: sample.variant || "5ml",
+      image: sample.image || "",
+      publicId: sample.publicId || "",
+      productId: sample.productId || "",
     });
+    setEditFormVariants([{
+      value: sample.value || 5,
+      unit: sample.unit || "ml",
+      price: sample.price || 60,
+      discount: sample.discount || 0,
+      id: "editing"
+    }]);
     openEdit();
   };
 
+  const handleOpenCreate = () => {
+    setEditingSample(null);
+    setEditForm({
+      name: "",
+      status: "available",
+      image: "",
+      publicId: "",
+      productId: "",
+    });
+    setEditFormVariants([{ value: 5, unit: "ml", price: 60, discount: 0, id: Math.random().toString() }]);
+    openEdit();
+  };
+
+  const addVariantField = () => {
+    setEditFormVariants(prev => [...prev, { value: 5, unit: "ml", price: 60, discount: 0, id: Math.random().toString() }]);
+  };
+
+  const removeVariantField = (id: string) => {
+    if (editFormVariants.length > 1) {
+      setEditFormVariants(prev => prev.filter(v => v.id !== id));
+    }
+  };
+
+  const updateVariantField = (id: string, field: string, val: any) => {
+    setEditFormVariants(prev => prev.map(v => v.id === id ? { ...v, [field]: val } : v));
+  };
+
   const handleSaveEdit = async () => {
-    if (!editingSample) return;
     setLoading(true);
     try {
-      const res = await updateSample(editingSample._id, editForm);
-      if (res && res._id) {
-        setSamples((prev) => prev.map((s) => (s._id === editingSample._id ? { ...s, ...res } : s)));
-        notifications.show({ title: "Updated", message: `"${res.name}" updated successfully`, color: "green" });
+      if (editingSample) {
+        // Single update
+        const v = editFormVariants[0];
+        const updatedData = {
+          ...editForm,
+          value: Number(v.value),
+          unit: v.unit,
+          price: Number(v.price),
+          discount: Number(v.discount),
+          variant: `${v.value}${v.unit}`
+        };
+        const res = await updateSample(editingSample._id, updatedData);
+        if (res && res._id) {
+          setSamples((prev) => prev.map((s) => (s._id === editingSample._id ? { ...s, ...res } : s)));
+          notifications.show({ title: "Updated", message: `"${res.name}" updated successfully`, color: "green" });
+        }
+      } else {
+        // Bulk creation
+        const results = await Promise.all(
+          editFormVariants.map(v => 
+            createSample({
+              ...editForm,
+              value: Number(v.value),
+              unit: v.unit,
+              price: Number(v.price),
+              discount: Number(v.discount),
+              variant: `${v.value}${v.unit}`
+            })
+          )
+        );
+        
+        const validResults = results.filter(r => r && r._id);
+        if (validResults.length > 0) {
+          setSamples((prev) => [...validResults, ...prev]);
+          notifications.show({ title: "Created", message: `${validResults.length} variants created successfully`, color: "green" });
+        }
       }
       closeEdit();
       router.refresh();
     } catch {
-      notifications.show({ title: "Error", message: "Failed to update sample", color: "red" });
+      notifications.show({ title: "Error", message: "Failed to save sample(s)", color: "red" });
     } finally {
       setLoading(false);
     }
@@ -259,38 +352,35 @@ export default function SamplesClient({ initialData, initialSettings }: SamplesC
 
   /* ── Import product as sample ── */
   const handleImport = async (ps: ProductSample) => {
-    const config = importPrices[ps.productId];
-    if (!config) return;
-    if (!config.enabled5ml && !config.enabled10ml) {
+    const configList = importPrices[ps.productId];
+    if (!configList || configList.every(c => !c.enabled)) {
       notifications.show({ title: "Select a variant", message: "Please enable at least one variant to import", color: "orange" });
       return;
     }
 
     setImportingId(ps.productId);
     try {
-      const results = [];
+      const results: any[] = [];
+      const productSamplesList = ps.samples && ps.samples.length > 0 
+        ? ps.samples 
+        : [{ value: "5", unit: "ml", price: "60" }]; // Fallback if no samples defined
       
-      if (config.enabled5ml) {
-        results.push(createSample({
-          name: `${ps.name} - 5ml`,
-          price: config.price5ml,
-          status: "available",
-          image: ps.image || "",
-          productId: ps.productId,
-          variant: "5ml",
-        }));
-      }
-
-      if (config.enabled10ml) {
-        results.push(createSample({
-          name: `${ps.name} - 10ml`,
-          price: config.price10ml,
-          status: "available",
-          image: ps.image || "",
-          productId: ps.productId,
-          variant: "10ml",
-        }));
-      }
+      configList.forEach((config) => {
+        if (config.enabled) {
+          results.push(createSample({
+            name: `${ps.name} - ${config.value}${config.unit}`,
+            price: config.price,
+            status: "available",
+            discount: 0,
+            image: ps.image || "",
+            productId: ps.productId,
+            variant: `${config.value}${config.unit}`,
+            value: Number(config.value),
+            unit: config.unit,
+            publicId: "",
+          }));
+        }
+      });
 
       const createdSamples = await Promise.all(results);
       const validSamples = createdSamples.filter(s => s && s._id);
@@ -304,7 +394,8 @@ export default function SamplesClient({ initialData, initialSettings }: SamplesC
         });
       }
       router.refresh();
-    } catch {
+    } catch (error) {
+      console.error(error);
       notifications.show({ title: "Error", message: "Failed to import product", color: "red" });
     } finally {
       setImportingId(null);
@@ -338,8 +429,17 @@ export default function SamplesClient({ initialData, initialSettings }: SamplesC
           </Tabs.Tab>
         </Tabs.List>
 
-        {/* ══════ TAB 1: Managed Samples ══════ */}
         <Tabs.Panel value="samples" pt="md">
+          <Group justify="flex-end" mb="md">
+            <Button 
+              leftSection={<IconPlus size={16} />} 
+              variant="outline" 
+              color="violet"
+              onClick={handleOpenCreate}
+            >
+              Create New Sample
+            </Button>
+          </Group>
           {samples.filter(Boolean).length === 0 ? (
             <Paper withBorder p="xl" radius="md" style={{ textAlign: "center" }}>
               <ThemeIcon size={56} radius="xl" variant="light" color="gray" mx="auto" mb="md">
@@ -379,7 +479,12 @@ export default function SamplesClient({ initialData, initialSettings }: SamplesC
                   <Stack gap={6} p="md">
                     <Group justify="space-between" align="flex-start">
                       <Text fw={700} size="sm" lineClamp={2} style={{ flex: 1 }}>{sample.name}</Text>
-                      {sample.variant && (
+                      {(sample.value || sample.unit) && (
+                        <Badge size="xs" variant="outline" color="violet">
+                          {sample.value}{sample.unit}
+                        </Badge>
+                      )}
+                      {sample.variant && !sample.value && (
                         <Badge size="xs" variant="outline" color="gray">
                           {sample.variant}
                         </Badge>
@@ -471,55 +576,82 @@ export default function SamplesClient({ initialData, initialSettings }: SamplesC
                     <Text fw={600} size="sm" lineClamp={1}>{ps.name}</Text>
                     
                     <Stack gap={8}>
-                      <Group justify="space-between" align="center">
-                        <Group gap={6}>
+                      {(importPrices[ps.productId] || []).map((config, idx) => (
+                        <Group key={idx} justify="space-between" align="center" wrap="nowrap">
                           <Switch 
                             size="xs" 
-                            checked={importPrices[ps.productId]?.enabled5ml} 
-                            onChange={(e) => setImportPrices(prev => ({
-                              ...prev,
-                              [ps.productId]: { ...prev[ps.productId], enabled5ml: e.currentTarget.checked }
-                            }))}
+                            checked={config.enabled} 
+                            onChange={(e) => {
+                              const newPrices = [...(importPrices[ps.productId] || [])];
+                              newPrices[idx] = { ...newPrices[idx], enabled: e.currentTarget.checked };
+                              setImportPrices(prev => ({ ...prev, [ps.productId]: newPrices }));
+                            }}
                           />
-                          <Text size="xs" fw={500}>5ml</Text>
-                        </Group>
-                        <NumberInput
-                          size="xs"
-                          w={70}
-                          placeholder="Price"
-                          value={importPrices[ps.productId]?.price5ml}
-                          onChange={(val) => setImportPrices(prev => ({
-                            ...prev,
-                            [ps.productId]: { ...prev[ps.productId], price5ml: Number(val) || 0 }
-                          }))}
-                          disabled={!importPrices[ps.productId]?.enabled5ml}
-                        />
-                      </Group>
-
-                      <Group justify="space-between" align="center">
-                        <Group gap={6}>
-                          <Switch 
+                          <Group gap={4} style={{ flex: 1 }} wrap="nowrap">
+                            <NumberInput
+                              size="xs"
+                              w={50}
+                              placeholder="Val"
+                              value={config.value}
+                              onChange={(val) => {
+                                const newPrices = [...(importPrices[ps.productId] || [])];
+                                newPrices[idx] = { ...newPrices[idx], value: Number(val) || 0 };
+                                setImportPrices(prev => ({ ...prev, [ps.productId]: newPrices }));
+                              }}
+                              disabled={!config.enabled}
+                            />
+                            <Select
+                              size="xs"
+                              w={65}
+                              data={["ml", "g", "pcs", "oz", "unit"]}
+                              value={config.unit}
+                              onChange={(val) => {
+                                const newPrices = [...(importPrices[ps.productId] || [])];
+                                newPrices[idx] = { ...newPrices[idx], unit: val || "ml" };
+                                setImportPrices(prev => ({ ...prev, [ps.productId]: newPrices }));
+                              }}
+                              disabled={!config.enabled}
+                              searchable
+                            />
+                          </Group>
+                          <NumberInput
+                            size="xs"
+                            w={65}
+                            placeholder="Price"
+                            value={config.price}
+                            onChange={(val) => {
+                              const newPrices = [...(importPrices[ps.productId] || [])];
+                              newPrices[idx] = { ...newPrices[idx], price: Number(val) || 0 };
+                              setImportPrices(prev => ({ ...prev, [ps.productId]: newPrices }));
+                            }}
+                            disabled={!config.enabled}
+                          />
+                          <ActionIcon 
                             size="xs" 
-                            checked={importPrices[ps.productId]?.enabled10ml} 
-                            onChange={(e) => setImportPrices(prev => ({
-                              ...prev,
-                              [ps.productId]: { ...prev[ps.productId], enabled10ml: e.currentTarget.checked }
-                            }))}
-                          />
-                          <Text size="xs" fw={500}>10ml</Text>
+                            color="red" 
+                            variant="light"
+                            onClick={() => {
+                              const newPrices = [...(importPrices[ps.productId] || [])];
+                              newPrices.splice(idx, 1);
+                              setImportPrices(prev => ({ ...prev, [ps.productId]: newPrices }));
+                            }}
+                          >
+                            <IconX size={12} />
+                          </ActionIcon>
                         </Group>
-                        <NumberInput
-                          size="xs"
-                          w={70}
-                          placeholder="Price"
-                          value={importPrices[ps.productId]?.price10ml}
-                          onChange={(val) => setImportPrices(prev => ({
-                            ...prev,
-                            [ps.productId]: { ...prev[ps.productId], price10ml: Number(val) || 0 }
-                          }))}
-                          disabled={!importPrices[ps.productId]?.enabled10ml}
-                        />
-                      </Group>
+                      ))}
+                      <Button 
+                        size="compact-xs" 
+                        variant="subtle" 
+                        leftSection={<IconPlus size={10} />}
+                        onClick={() => {
+                          const newPrices = [...(importPrices[ps.productId] || [])];
+                          newPrices.push({ price: 60, enabled: true, value: 5, unit: "ml" });
+                          setImportPrices(prev => ({ ...prev, [ps.productId]: newPrices }));
+                        }}
+                      >
+                        Add Variant
+                      </Button>
                     </Stack>
 
                     <Button
@@ -639,43 +771,184 @@ export default function SamplesClient({ initialData, initialSettings }: SamplesC
         onClose={closeEdit}
         title={
           <Group gap="xs">
-            <ThemeIcon size={28} variant="light" color="blue" radius="md">
-              <IconEdit size={14} />
+            <ThemeIcon size={28} variant="light" color={editingSample ? "blue" : "teal"} radius="md">
+              {editingSample ? <IconEdit size={14} /> : <IconPlus size={14} />}
             </ThemeIcon>
-            <Text fw={700}>Edit Sample</Text>
+            <Text fw={700}>{editingSample ? "Edit Sample" : "Create New Sample"}</Text>
           </Group>
         }
         centered
         size="md"
       >
         <Stack gap="md">
-          {editingSample?.image?.startsWith('http') && (
-            <Box pos="relative" h={160} style={{ overflow: "hidden", borderRadius: 8 }}>
-              <Image src={editingSample.image} alt={editingSample.name} fill style={{ objectFit: "cover" }} />
-            </Box>
+          {!editingSample && (
+            <Stack gap="xs">
+              <Select
+                label="Product to Import (Optional)"
+                placeholder="Select a product from catalog"
+                description="Selecting a product will automatically fill in the name and image."
+                data={productSamples.map(ps => ({ value: ps.productId, label: ps.name }))}
+                searchable
+                nothingFoundMessage="No products found"
+                value={editForm.productId || ""}
+                onChange={(val) => {
+                  const prod = productSamples.find(p => p.productId === val);
+                  if (prod) {
+                    setEditForm(prev => ({ 
+                      ...prev, 
+                      productId: val || "",
+                      name: prod.name,
+                      image: prod.image
+                    }));
+                    
+                    // Populate variants if available
+                    if (prod.samples && prod.samples.length > 0) {
+                      setEditFormVariants(prod.samples.map(s => ({
+                        value: Number(s.value) || 5,
+                        unit: s.unit || "ml",
+                        price: Number(s.price) || 60,
+                        discount: 0,
+                        id: Math.random().toString()
+                      })));
+                    } else {
+                      setEditFormVariants([{ value: 5, unit: "ml", price: 60, discount: 0, id: Math.random().toString() }]);
+                    }
+                  } else {
+                    setEditForm(prev => ({ ...prev, productId: "", name: "", image: "" }));
+                    setEditFormVariants([{ value: 5, unit: "ml", price: 60, discount: 0, id: Math.random().toString() }]);
+                  }
+                }}
+              />
+              {editForm.productId && productSamples.find(p => p.productId === editForm.productId)?.samples?.length! > 0 && (
+                <Text size="xs" c="dimmed" mt={-10}>
+                  {productSamples.find(p => p.productId === editForm.productId)?.samples?.length} predefined variants loaded.
+                </Text>
+              )}
+              <Divider label="Form Details" labelPosition="center" />
+            </Stack>
           )}
+          <Box pos="relative" h={160} style={{ overflow: "hidden", borderRadius: 8, background: "#f8f9fa" }}>
+            {editForm.image ? (
+              <>
+                <Image src={editForm.image} alt="Preview" fill style={{ objectFit: "cover" }} />
+                <ActionIcon 
+                  pos="absolute" top={8} right={8} color="red" variant="filled" size="sm"
+                  onClick={() => setEditForm(prev => ({ ...prev, image: "", publicId: "" }))}
+                >
+                  <IconTrash size={14} />
+                </ActionIcon>
+              </>
+            ) : (
+              <Group justify="center" align="center" h="100%">
+                <Stack gap={4} align="center">
+                  <IconPhoto size={40} stroke={1.5} color="gray" />
+                  <Text size="xs" c="dimmed">No image uploaded</Text>
+                </Stack>
+              </Group>
+            )}
+            <Box pos="absolute" bottom={8} right={8}>
+              <Button 
+                size="compact-xs" 
+                variant="white" 
+                leftSection={<IconUpload size={12} />}
+                onClick={() => {
+                  const input = document.createElement("input");
+                  input.type = "file";
+                  input.accept = "image/*";
+                  input.onchange = (e: any) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onloadend = async () => {
+                      try {
+                        setUploadingImage(true);
+                        const res = await uploadSampleBanner(reader.result as string, editForm.publicId); 
+                        setEditForm(prev => ({ ...prev, image: res.url, publicId: res.public_id }));
+                      } catch (err) {
+                        notifications.show({ title: "Upload Failed", message: "Failed to upload image", color: "red" });
+                      } finally {
+                        setUploadingImage(false);
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  };
+                  input.click();
+                }}
+                loading={uploadingImage}
+              >
+                Upload
+              </Button>
+            </Box>
+          </Box>
           <TextInput
             label="Sample Name"
             placeholder="Sample name"
-            value={editForm.name}
-            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
             required
+            value={editForm.name}
+            onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
           />
-          <SimpleGrid cols={2} spacing="md">
-            <NumberInput
-              label="Price (₹)"
-              value={editForm.price}
-              min={0}
-              onChange={(val) => setEditForm({ ...editForm, price: Number(val) || 0 })}
-            />
-            <NumberInput
-              label="Discount (%)"
-              value={editForm.discount}
-              min={0}
-              max={100}
-              onChange={(val) => setEditForm({ ...editForm, discount: Number(val) || 0 })}
-            />
-          </SimpleGrid>
+
+          <Box>
+            <Group justify="space-between" mb="xs">
+              <Text fw={600} size="sm">Sample Variants</Text>
+              {!editingSample && (
+                <Button 
+                  size="compact-xs" 
+                  variant="light" 
+                  leftSection={<IconPlus size={12} />} 
+                  onClick={addVariantField}
+                >
+                  Add Variant
+                </Button>
+              )}
+            </Group>
+            
+            <Stack gap="xs">
+              {editFormVariants.map((v) => (
+                <Card key={v.id} withBorder p="xs" radius="sm">
+                  <Stack gap="xs">
+                    <Group grow align="flex-end" gap="xs">
+                      <NumberInput
+                        label="Value"
+                        value={v.value}
+                        min={1}
+                        size="xs"
+                        onChange={(val) => updateVariantField(v.id!, "value", Number(val))}
+                      />
+                      <Select
+                        label="Unit"
+                        data={["ml", "g", "pcs"]}
+                        value={v.unit}
+                        size="xs"
+                        onChange={(val) => updateVariantField(v.id!, "unit", val)}
+                      />
+                      <NumberInput
+                        label="Price (₹)"
+                        value={v.price}
+                        min={0}
+                        size="xs"
+                        onChange={(val) => updateVariantField(v.id!, "price", Number(val))}
+                      />
+                      {!editingSample && editFormVariants.length > 1 && (
+                        <ActionIcon color="red" variant="subtle" onClick={() => removeVariantField(v.id!)} mb={4}>
+                          <IconTrash size={16} />
+                        </ActionIcon>
+                      )}
+                    </Group>
+                    <NumberInput
+                      label="Discount (%)"
+                      value={v.discount}
+                      min={0}
+                      max={100}
+                      size="xs"
+                      onChange={(val) => updateVariantField(v.id!, "discount", Number(val))}
+                    />
+                  </Stack>
+                </Card>
+              ))}
+            </Stack>
+          </Box>
+
           <Select
             label="Availability"
             data={[
@@ -683,24 +956,29 @@ export default function SamplesClient({ initialData, initialSettings }: SamplesC
               { value: "unavailable", label: "Unavailable" },
             ]}
             value={editForm.status}
-            onChange={(val) => setEditForm({ ...editForm, status: val as any })}
+            onChange={(val) => setEditForm(prev => ({ ...prev, status: val as any }))}
           />
-          <Select
-            label="Variant (Size)"
-            data={[
-              { value: "5ml", label: "5ml" },
-              { value: "10ml", label: "10ml" },
-              { value: "custom", label: "Custom" },
-            ]}
-            value={editForm.variant}
-            onChange={(val) => setEditForm({ ...editForm, variant: val || "5ml" })}
-          />
-          <Group justify="flex-end" mt="sm">
-            <Button variant="subtle" onClick={closeEdit} leftSection={<IconX size={16} />}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveEdit} loading={loading} leftSection={<IconCheck size={16} />}>
-              Save Changes
+
+          {editingSample && editForm.productId && (
+            <TextInput
+              label="Linked Product ID"
+              value={editForm.productId}
+              readOnly
+              disabled
+              variant="filled"
+              size="xs"
+            />
+          )}
+
+          <Group justify="flex-end" mt="md">
+            <Button variant="subtle" onClick={closeEdit} leftSection={<IconX size={16} />}>Cancel</Button>
+            <Button 
+              onClick={handleSaveEdit} 
+              loading={loading} 
+              leftSection={<IconCheck size={16} />}
+              color="blue"
+            >
+              {editingSample ? "Update Sample" : `Save ${editFormVariants.length} Sample${editFormVariants.length > 1 ? "s" : ""}`}
             </Button>
           </Group>
         </Stack>

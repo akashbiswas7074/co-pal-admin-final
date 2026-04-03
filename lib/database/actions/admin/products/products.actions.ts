@@ -37,18 +37,17 @@ export const createProduct = async (
   ingredients: Array<{ name: string }>,
   parent: string,
   featured: boolean,
-  price?: number, // Optional direct price for products without sizes
-  qty?: number,   // Optional direct quantity for products without sizes
-  stock?: number,  // Optional direct stock for products without sizes
-  tagValues?: Array<{ tagId: string; value: string }>, // Tag values for the product
+  price?: number,
+  qty?: number,
+  stock?: number,
+  tagValues?: Array<{ tagId: string; value: string }>,
   shippingDimensions?: {
     length: string;
     breadth: string;
     height: string;
     weight: string;
-  }, // Shipping dimensions for delivery charge calculation
-  sample5mlPrice?: number,
-  sample10mlPrice?: number
+  },
+  samples?: Array<{ value: string; unit: string; price: string }>
 ) => {
   try {
     await connectToDatabase();
@@ -184,28 +183,24 @@ export const createProduct = async (
       });
       await newProduct.save();
 
-      // Create samples automatically if prices are provided
-      if (sample5mlPrice !== undefined && sample5mlPrice > 0) {
-        await Sample.create({
-          name: `${name} - 5ml`,
-          price: sample5mlPrice,
-          productId: newProduct._id.toString(),
-          variant: "5ml",
-          image: images[0]?.secure_url || images[0]?.url || images[0] || "",
-          status: "available"
-        });
+      // Create samples automatically if provided
+      if (samples && samples.length > 0) {
+        for (const sample of samples) {
+          if (sample.price && sample.value) {
+            await Sample.create({
+              name: `${name} - ${sample.value}${sample.unit}`,
+              price: parseFloat(sample.price) || 0,
+              productId: newProduct._id.toString(),
+              variant: `${sample.value}${sample.unit}`,
+              value: parseFloat(sample.value) || 0,
+              unit: sample.unit || "ml",
+              image: images[0]?.secure_url || images[0]?.url || images[0] || "",
+              status: "available"
+            });
+          }
+        }
       }
 
-      if (sample10mlPrice !== undefined && sample10mlPrice > 0) {
-        await Sample.create({
-          name: `${name} - 10ml`,
-          price: sample10mlPrice,
-          productId: newProduct._id.toString(),
-          variant: "10ml",
-          image: images[0]?.secure_url || images[0]?.url || images[0] || "",
-          status: "available"
-        });
-      }
 
       return {
         message: "Product created successfully.",
@@ -324,9 +319,7 @@ export const updateProduct = async (
     height: string;
     weight: string;
   }, // Shipping dimensions for delivery charge calculation
-  brand?: string, // Brand name for the product
-  sample5mlPrice?: number,
-  sample10mlPrice?: number
+  samples?: Array<{ value: string; unit: string; price: string }>
 ) => {
   try {
     await connectToDatabase();
@@ -362,11 +355,6 @@ export const updateProduct = async (
     product.ingredients = ingredients;
     product.longDescription = longDescription;
     
-    // Update brand if provided
-    if (brand !== undefined) {
-      product.brand = brand;
-    }
-
     // Update shipping dimensions if provided
     if (shippingDimensions) {
       product.shippingDimensions = {
@@ -464,33 +452,26 @@ export const updateProduct = async (
     await product.save();
 
     // Update or create samples
-    if (sample5mlPrice !== undefined && sample5mlPrice > 0) {
-      await Sample.findOneAndUpdate(
-        { productId: productId, variant: "5ml" },
-        { 
-          $set: { 
-            name: `${name} - 5ml`,
-            price: sample5mlPrice,
+    if (samples && samples.length > 0) {
+      // Delete existing samples first to avoid duplicates/orphans
+      await Sample.deleteMany({ productId: productId });
+      
+      for (const sample of samples) {
+        if (sample.price && sample.value) {
+          await Sample.create({
+            name: `${name} - ${sample.value}${sample.unit}`,
+            price: parseFloat(sample.price) || 0,
+            productId: productId,
+            variant: `${sample.value}${sample.unit}`,
+            value: parseFloat(sample.value) || 0,
+            unit: sample.unit || "ml",
             image: product.subProducts[0]?.images[0]?.url || product.subProducts[0]?.images[0] || "",
-          } 
-        },
-        { upsert: true, new: true }
-      );
+            status: "available"
+          });
+        }
+      }
     }
 
-    if (sample10mlPrice !== undefined && sample10mlPrice > 0) {
-      await Sample.findOneAndUpdate(
-        { productId: productId, variant: "10ml" },
-        { 
-          $set: { 
-            name: `${name} - 10ml`,
-            price: sample10mlPrice,
-            image: product.subProducts[0]?.images[0]?.url || product.subProducts[0]?.images[0] || "",
-          } 
-        },
-        { upsert: true, new: true }
-      );
-    }
 
     return {
       message: "Product updated successfully.",
@@ -618,7 +599,7 @@ export const getEntireProductById = async (id: string) => {
 
     // Check user authorization for vendors
     const userContext = await getCurrentUserContext();
-    if (userContext.role === 'vendor' && product.vendorId?.toString() !== userContext.userId) {
+    if (userContext.role === 'vendor' && (product as any).vendorId?.toString() !== userContext.userId) {
       return {
         message: "You are not authorized to view this product",
         product: null,
@@ -779,7 +760,7 @@ export const getLatestProductReviews = async () => {
     if (userContext.role === 'vendor' && userContext.userId) {
       // Get all product IDs belonging to this vendor
       const vendorProducts = await Product.find({ vendorId: userContext.userId }).select('_id').lean();
-      const vendorProductIds = vendorProducts.map(p => p._id.toString());
+      const vendorProductIds = vendorProducts.map((p: any) => p._id.toString());
 
       // Filter reviews to only include those for vendor's products
       filteredReviews = reviews.filter(review =>
@@ -965,5 +946,16 @@ export const updateProductImages = async (
       message: error.message || "An error occurred while updating product images",
       success: false,
     };
+  }
+};
+// get samples by product ID
+export const getSamplesByProductId = async (productId: string) => {
+  try {
+    await connectToDatabase();
+    const samples = await Sample.find({ productId: productId }).lean();
+    return JSON.parse(JSON.stringify(samples));
+  } catch (error: any) {
+    console.error("Error fetching samples by product ID:", error);
+    return [];
   }
 };

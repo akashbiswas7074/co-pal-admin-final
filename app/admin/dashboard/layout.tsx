@@ -20,7 +20,7 @@ import { VscGraph } from "react-icons/vsc";
 import { FaRegRectangleList, FaUsers } from "react-icons/fa6";
 import { ImUsers } from "react-icons/im";
 import { BiLogOut } from "react-icons/bi";
-import { IconAlertCircle } from "@tabler/icons-react";
+import { IconAlertCircle, IconSettings } from "@tabler/icons-react";
 import Link from "next/link";
 import { ModalsProvider } from "@mantine/modals";
 import Logo from "@/components/Logo";
@@ -53,12 +53,18 @@ interface NavSection {
 // Create the navigation structure
 const navigationItems: NavSection[] = [
   {
+    title: "General",
     items: [
       {
         href: "/admin/dashboard",
         icon: <MdSpaceDashboard size={20} />,
         label: "Admin Dashboard"
-      },
+      }
+    ]
+  },
+  {
+    title: "Marketing",
+    items: [
       {
         href: "/admin/dashboard/send-coupon",
         icon: <RiCoupon3Fill size={20} />,
@@ -72,47 +78,7 @@ const navigationItems: NavSection[] = [
     ]
   },
   {
-    title: "Offers & Reviews",
-    items: [
-      {
-        href: "/admin/dashboard/topbars",
-        icon: <FaTable size={20} />,
-        label: "Topbar Offers"
-      },
-      {
-        href: "/admin/dashboard/homescreenoffers",
-        icon: <FaTable size={20} />,
-        label: "Home Screen Offers"
-      },
-      {
-        href: "/admin/dashboard/reviews",
-        icon: <FaStar size={20} />,
-        label: "Product Reviews"
-      }
-    ]
-  },
-  {
-    title: "User Management",
-    items: [
-      {
-        href: "/admin/dashboard/users",
-        icon: <ImUsers size={20} />,
-        label: "Users"
-      },
-      {
-        href: "/admin/dashboard/vendors",
-        icon: <FaUsers size={20} />,
-        label: "Vendors"
-      },
-      {
-        href: "/admin/dashboard/coupons",
-        icon: <RiCoupon3Fill size={20} />,
-        label: "Coupons"
-      }
-    ]
-  },
-  {
-    title: "Orders",
+    title: "Sales",
     items: [
       {
         href: "/admin/dashboard/orders",
@@ -123,26 +89,16 @@ const navigationItems: NavSection[] = [
         href: "/admin/dashboard/orders/cancellation-requests",
         icon: <IconAlertCircle size={18} />,
         label: "Cancellation Requests"
-      }
-    ]
-  },
-  {
-    title: "Shipping",
-    items: [
-      {
-        href: "/admin/warehouse",
-        icon: <FaWarehouse size={20} />,
-        label: "Warehouse Management"
       },
       {
-        href: "/admin/dashboard/shipment",
-        icon: <FaWarehouse size={20} />,
-        label: "Shipment Management"
+        href: "/admin/dashboard/coupons",
+        icon: <RiCoupon3Fill size={20} />,
+        label: "Coupons"
       }
     ]
   },
   {
-    title: "Products",
+    title: "Catalog",
     items: [
       {
         href: "/admin/dashboard/product/all/tabular",
@@ -158,12 +114,7 @@ const navigationItems: NavSection[] = [
         href: "/admin/dashboard/samples",
         icon: <FaLayerGroup size={20} />,
         label: "Samples"
-      }
-    ]
-  },
-  {
-    title: "Categories",
-    items: [
+      },
       {
         href: "/admin/dashboard/categories",
         icon: <MdOutlineCategory size={20} />,
@@ -177,7 +128,72 @@ const navigationItems: NavSection[] = [
     ]
   },
   {
-    title: "Content Management",
+    title: "Promotions",
+    items: [
+      {
+        href: "/admin/dashboard/homescreenoffers",
+        icon: <FaTable size={20} />,
+        label: "Home Screen Offers"
+      },
+      {
+        href: "/admin/dashboard/topbars",
+        icon: <FaTable size={20} />,
+        label: "Topbar Offers"
+      },
+      {
+        href: "/admin/dashboard/banners/website",
+        icon: <FaRegRectangleList size={20} />,
+        label: "Website Banners"
+      },
+      {
+        href: "/admin/dashboard/banners/app",
+        icon: <FaRegRectangleList size={20} />,
+        label: "App Banners"
+      },
+      {
+        href: "/admin/dashboard/banners/metrics",
+        icon: <VscGraph size={20} />,
+        label: "Banner Analytics"
+      }
+    ]
+  },
+  {
+    title: "Customers & Reviews",
+    items: [
+      {
+        href: "/admin/dashboard/users",
+        icon: <ImUsers size={20} />,
+        label: "Users"
+      },
+      {
+        href: "/admin/dashboard/vendors",
+        icon: <FaUsers size={20} />,
+        label: "Vendors"
+      },
+      {
+        href: "/admin/dashboard/reviews",
+        icon: <FaStar size={20} />,
+        label: "Product Reviews"
+      }
+    ]
+  },
+  {
+    title: "Logistics",
+    items: [
+      {
+        href: "/admin/warehouse",
+        icon: <FaWarehouse size={20} />,
+        label: "Warehouse Management"
+      },
+      {
+        href: "/admin/dashboard/shipment",
+        icon: <FaWarehouse size={20} />,
+        label: "Shipment Management"
+      }
+    ]
+  },
+  {
+    title: "Content",
     items: [
       {
         href: "/admin/dashboard/blogs",
@@ -207,42 +223,27 @@ const navigationItems: NavSection[] = [
     ]
   },
   {
-    title: "Banners",
-    items: [
-      {
-        href: "/admin/dashboard/banners/website",
-        icon: <FaRegRectangleList size={20} />,
-        label: "Website Banners"
-      },
-      {
-        href: "/admin/dashboard/banners/metrics",
-        icon: <VscGraph size={20} />,
-        label: "Banner Analytics"
-      },
-      {
-        href: "/admin/dashboard/banners/app",
-        icon: <FaRegRectangleList size={20} />,
-        label: "App Banners"
-      }
-    ]
-  },
-  {
-    title: "Customization",
+    title: "Design & Settings",
     items: [
       {
         href: "/admin/dashboard/website-logos",
-        icon: <FaRegRectangleList size={20} />,
+        icon: <MdOutlineCategory size={20} />,
         label: "Website Logos"
       },
       {
         href: "/admin/dashboard/website-settings",
-        icon: <FaRegRectangleList size={20} />,
+        icon: <IconSettings size={18} />,
         label: "Website Settings"
       },
       {
         href: "/admin/dashboard/navbar-settings",
-        icon: <FaRegRectangleList size={20} />,
+        icon: <IconSettings size={18} />,
         label: "Navbar Global Settings"
+      },
+      {
+        href: "/admin/dashboard/footer-settings",
+        icon: <IconSettings size={18} />,
+        label: "Footer Global Settings"
       },
       {
         href: "/admin/dashboard/site-footer",
@@ -250,15 +251,60 @@ const navigationItems: NavSection[] = [
         label: "Site Footer Links"
       },
       {
-        href: "/admin/dashboard/footer-settings",
-        icon: <FaRegRectangleList size={20} />,
-        label: "Footer Global Settings"
-      },
-      {
         href: "/admin/dashboard/preloader-settings",
         icon: <FaRegRectangleList size={20} />,
         label: "Preloader Settings"
+      }
+    ]
+  },
+  {
+    title: "Pages & Layouts",
+    items: [
+      {
+        href: "/admin/dashboard/custom-pages",
+        icon: <FaRegRectangleList size={20} />,
+        label: "Custom Pages"
       },
+      {
+        href: "/admin/dashboard/homepage-sections",
+        icon: <FaLayerGroup size={20} />,
+        label: "Homepage Sections"
+      },
+      {
+        href: "/admin/dashboard/hero-sections",
+        icon: <FaLayerGroup size={20} />,
+        label: "Hero Sections"
+      },
+      {
+        href: "/admin/dashboard/website-sections",
+        icon: <FaLayerGroup size={20} />,
+        label: "Website Sections"
+      },
+      {
+        href: "/admin/dashboard/website-sections/category-sections",
+        icon: <FaLayerGroup size={20} />,
+        label: "Category Sections"
+      },
+      {
+        href: "/admin/dashboard/navbar-links",
+        icon: <FaLayerGroup size={20} />,
+        label: "Navbar Sections"
+      },
+      {
+        href: "/admin/dashboard/faq",
+        icon: <FaQuestionCircle size={20} />,
+        label: "FAQ Management"
+      },
+      {
+        href: "/admin/dashboard/featuredyoutube",
+        icon: <FaFilm size={20} />,
+        label: "Featured Video"
+      }
+    ]
+  },
+  {
+    title: "Policies & Guides",
+    items: [
       {
         href: "/admin/dashboard/return-policy",
         icon: <FaRegRectangleList size={20} />,
@@ -273,41 +319,6 @@ const navigationItems: NavSection[] = [
         href: "/admin/dashboard/size-guide-manager",
         icon: <FaRegRectangleList size={20} />,
         label: "Size Guide"
-      },
-      {
-        href: "/admin/dashboard/faq",
-        icon: <FaQuestionCircle size={20} />,
-        label: "FAQ Management"
-      },
-      {
-        href: "/admin/dashboard/featuredyoutube",
-        icon: <FaFilm size={20} />,
-        label: "Featured Video"
-      },
-      {
-        href: "/admin/dashboard/website-sections/category-sections",
-        icon: <FaLayerGroup size={20} />,
-        label: "Category Sections"
-      },
-      {
-        href: "/admin/dashboard/website-sections",
-        icon: <FaLayerGroup size={20} />,
-        label: "Website Sections"
-      },
-      {
-        href: "/admin/dashboard/homepage-sections",
-        icon: <FaLayerGroup size={20} />,
-        label: "Homepage Sections"
-      },
-      {
-        href: "/admin/dashboard/hero-sections",
-        icon: <FaLayerGroup size={20} />,
-        label: "Hero Sections"
-      },
-      {
-        href: "/admin/dashboard/navbar-links",
-        icon: <FaLayerGroup size={20} />,
-        label: "Navbar Sections"
       }
     ]
   }

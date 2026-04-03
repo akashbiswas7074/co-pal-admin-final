@@ -27,7 +27,6 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
 import { IWebsiteSection } from "@/lib/database/models/website.section.model";
 import { updateWebsiteSection } from "@/lib/database/actions/website.section.actions";
-import { connectToDatabase } from "@/lib/database/connect";
 
 // Form schema for validation
 const formSchema = z.object({
@@ -83,7 +82,6 @@ export default function EditSectionDialog({
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        await connectToDatabase();
         // Assuming there's a Category model and an API endpoint
         const response = await fetch("/api/admin/categories");
         const data = await response.json();

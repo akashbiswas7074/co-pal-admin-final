@@ -615,7 +615,6 @@ function Row(props: RowProps) { // Use defined RowProps
                   <TableCell></TableCell>
                   <TableCell>Name</TableCell>
                   <TableCell>SKU</TableCell>
-                  <TableCell>Brand</TableCell>
                   <TableCell>Size</TableCell>
                   <TableCell>Qty</TableCell>
                   <TableCell>Price</TableCell>
@@ -676,7 +675,6 @@ function Row(props: RowProps) { // Use defined RowProps
                             </div>
                           </TableCell>
                           <TableCell align="left">{p.product?.sku || p.sku || "N/A"}</TableCell>
-                          <TableCell align="left">{p.product?.brand || p.brand || "N/A"}</TableCell>
                           <TableCell align="left">{p.size || "N/A"}</TableCell>
                           <TableCell align="left">x{p.qty || 1}</TableCell>
                           <TableCell align="left">₹ {((p.qty || p.quantity || 1) * (p.price || 0)).toFixed(2)}</TableCell>
@@ -1105,7 +1103,7 @@ export default function AllOrdersTable({
             <Select
               label="Filter by Vendor"
               value={vendorFilter || "-"}
-              onChange={(event) => setVendorFilter(event.target.value === "-" ? "" : event.target.value)}
+              onChange={(event) => setVendorFilter && setVendorFilter(event.target.value === "-" ? "" : event.target.value)}
               displayEmpty
               inputProps={{ 'aria-label': 'Without label' }}
             >

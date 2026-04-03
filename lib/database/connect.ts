@@ -1,5 +1,7 @@
 import mongoose, { Mongoose } from "mongoose";
 
+import "./models";
+
 interface MongooseConnection {
   conn: Mongoose | null;
   promise: Promise<Mongoose> | null;

@@ -44,6 +44,23 @@ export interface IWebsiteSettings extends Document {
   googleTagManagerId?: string;
   facebookPixelId?: string;
   
+  // GST Configuration
+  gstClientId?: string;
+  gstClientSecret?: string;
+  gstUsername?: string;
+  gstPublicKey?: string;
+  gstStateCd?: string;
+  gstBaseUrl?: string;
+  
+  // Shipping Configuration
+  freeShippingThreshold?: number;
+  
+  // Payment Configuration
+  razorpayKeyId?: string;
+  razorpayKeySecret?: string;
+  razorpayWebhookSecret?: string;
+  bypassPayment: boolean;
+  
   // Schema.org
   organizationName?: string;
   organizationUrl?: string;
@@ -168,6 +185,56 @@ const WebsiteSettingsSchema = new Schema<IWebsiteSettings>({
   googleTagManagerId: String,
   facebookPixelId: String,
   
+  // GST Configuration
+  gstClientId: {
+    type: String,
+    trim: true
+  },
+  gstClientSecret: {
+    type: String,
+    trim: true
+  },
+  gstUsername: {
+    type: String,
+    trim: true
+  },
+  gstPublicKey: {
+    type: String,
+    trim: true
+  },
+  gstStateCd: {
+    type: String,
+    default: '27'
+  },
+  gstBaseUrl: {
+    type: String,
+    default: 'https://api.gst.gov.in'
+  },
+  
+  // Shipping Configuration
+  freeShippingThreshold: {
+    type: Number,
+    default: 0
+  },
+  
+  // Payment Configuration
+  razorpayKeyId: {
+    type: String,
+    trim: true
+  },
+  razorpayKeySecret: {
+    type: String,
+    trim: true
+  },
+  razorpayWebhookSecret: {
+    type: String,
+    trim: true
+  },
+  bypassPayment: {
+    type: Boolean,
+    default: false
+  },
+  
   // Schema.org
   organizationName: String,
   organizationUrl: String,
@@ -194,12 +261,20 @@ WebsiteSettingsSchema.index({ createdAt: -1 });
 // Ensure only one active setting at a time
 WebsiteSettingsSchema.pre('save', async function() {
   if (this.isActive) {
-    await this.constructor.updateMany(
+    await (this.constructor as any).updateMany(
       { _id: { $ne: this._id } },
       { isActive: false }
     );
   }
 });
+
+// Force re-registration of the model if it exists but is missing new schema paths (useful for development)
+if (mongoose.models.WebsiteSettings) {
+  const schema = (mongoose.models.WebsiteSettings as any).schema;
+  if (!schema.path('freeShippingThreshold') || !schema.path('gstClientId') || !schema.path('razorpayKeyId') || !schema.path('bypassPayment')) {
+    delete (mongoose.models as any).WebsiteSettings;
+  }
+}
 
 const WebsiteSettings = mongoose.models.WebsiteSettings || mongoose.model<IWebsiteSettings>('WebsiteSettings', WebsiteSettingsSchema);
 

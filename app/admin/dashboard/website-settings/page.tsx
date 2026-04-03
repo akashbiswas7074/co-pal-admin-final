@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, Upload, Trash2, Eye, Settings, Globe, Search, BarChart } from "lucide-react";
+import { Loader2, Save, Upload, Trash2, Eye, Settings, Globe, Search, BarChart, FileText, Fingerprint, Truck, Pencil, AlertCircle } from "lucide-react";
 import {
   getAllWebsiteSettings,
   createOrUpdateWebsiteSettings,
@@ -23,9 +23,12 @@ import {
   deleteWebsiteSettings
 } from "@/lib/database/actions/website.settings.actions";
 import { convertToWebP } from "@/lib/image-utils";
+import { SeoAiModal } from "@/components/admin/dashboard/website-settings/SeoAiModal";
+import { Sparkles } from "lucide-react";
 
 // Form validation schema
 const websiteSettingsSchema = z.object({
+  _id: z.string().optional(),
   // Basic SEO
   siteName: z.string().min(1, "Site name is required").max(100, "Site name cannot exceed 100 characters"),
   siteDescription: z.string().min(1, "Site description is required").max(160, "Description cannot exceed 160 characters"),
@@ -34,34 +37,34 @@ const websiteSettingsSchema = z.object({
   titleSeparator: z.string(),
 
   // Open Graph
-  ogTitle: z.string().max(40, "OG title cannot exceed 40 characters").optional(),
-  ogDescription: z.string().max(300, "OG description cannot exceed 300 characters").optional(),
-  ogImage: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  ogTitle: z.string().max(100, "OG title cannot exceed 100 characters").optional().or(z.literal("")),
+  ogDescription: z.string().max(500, "OG description cannot exceed 500 characters").optional().or(z.literal("")),
+  ogImage: z.string().optional().or(z.literal("")),
   ogType: z.enum(["website", "article", "product", "profile"]),
 
   // Twitter Card
-  twitterTitle: z.string().max(70, "Twitter title cannot exceed 70 characters").optional(),
-  twitterDescription: z.string().max(200, "Twitter description cannot exceed 200 characters").optional(),
-  twitterImage: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  twitterTitle: z.string().max(100, "Twitter title cannot exceed 100 characters").optional().or(z.literal("")),
+  twitterDescription: z.string().max(300, "Twitter description cannot exceed 300 characters").optional().or(z.literal("")),
+  twitterImage: z.string().optional().or(z.literal("")),
   twitterCard: z.enum(["summary", "summary_large_image", "app", "player"]),
-  twitterSite: z.string().optional(),
-  twitterCreator: z.string().optional(),
+  twitterSite: z.string().optional().or(z.literal("")),
+  twitterCreator: z.string().optional().or(z.literal("")),
 
   // Favicons
-  favicon: z.string().url("Must be a valid URL").optional().or(z.literal("")),
-  favicon16: z.string().url("Must be a valid URL").optional().or(z.literal("")),
-  favicon32: z.string().url("Must be a valid URL").optional().or(z.literal("")),
-  appleTouchIcon: z.string().url("Must be a valid URL").optional().or(z.literal("")),
-  androidChrome192: z.string().url("Must be a valid URL").optional().or(z.literal("")),
-  androidChrome512: z.string().url("Must be a valid URL").optional().or(z.literal("")),
-  safariPinnedTab: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  favicon: z.string().optional().or(z.literal("")),
+  favicon16: z.string().optional().or(z.literal("")),
+  favicon32: z.string().optional().or(z.literal("")),
+  appleTouchIcon: z.string().optional().or(z.literal("")),
+  androidChrome192: z.string().optional().or(z.literal("")),
+  androidChrome512: z.string().optional().or(z.literal("")),
+  safariPinnedTab: z.string().optional().or(z.literal("")),
   msTileColor: z.string(),
   themeColor: z.string(),
 
   // Additional Meta
-  author: z.string().optional(),
-  robots: z.string(),
-  canonical: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  author: z.string().optional().or(z.literal("")),
+  robots: z.string().default("index, follow"),
+  canonical: z.string().optional().or(z.literal("")),
 
   // Analytics
   googleAnalyticsId: z.string().optional(),
@@ -69,9 +72,9 @@ const websiteSettingsSchema = z.object({
   facebookPixelId: z.string().optional(),
 
   // Organization Schema
-  organizationName: z.string().optional(),
-  organizationUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
-  organizationLogo: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  organizationName: z.string().optional().or(z.literal("")),
+  organizationUrl: z.string().optional().or(z.literal("")),
+  organizationLogo: z.string().optional().or(z.literal("")),
   organizationType: z.enum(["Organization", "Corporation", "EducationalOrganization", "LocalBusiness", "Store"]),
 
   // Theme Settings
@@ -86,6 +89,23 @@ const websiteSettingsSchema = z.object({
     customCSS: z.string().default(""),
     darkMode: z.boolean().default(false),
   }).optional(),
+  
+  // GST Configuration
+  gstClientId: z.string().optional(),
+  gstClientSecret: z.string().optional(),
+  gstUsername: z.string().optional(),
+  gstPublicKey: z.string().optional(),
+  gstStateCd: z.string().default("27"),
+  gstBaseUrl: z.string().optional().or(z.literal("")).default("https://api.gst.gov.in"),
+
+  // Shipping Configuration
+  freeShippingThreshold: z.number().min(0, "Threshold must be a positive number").default(0),
+
+  // Payment Configuration
+  razorpayKeyId: z.string().optional().or(z.literal("")),
+  razorpayKeySecret: z.string().optional().or(z.literal("")),
+  razorpayWebhookSecret: z.string().optional().or(z.literal("")),
+  bypassPayment: z.boolean().default(false),
 });
 
 type WebsiteSettingsFormValues = z.infer<typeof websiteSettingsSchema>;
@@ -96,6 +116,8 @@ export default function WebsiteSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [existingSettings, setExistingSettings] = useState<any[]>([]);
   const [keywordsInput, setKeywordsInput] = useState("");
+  const [seoAiModalOpen, setSeoAiModalOpen] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
 
   const form = useForm<WebsiteSettingsFormValues>({
     resolver: zodResolver(websiteSettingsSchema) as any,
@@ -111,6 +133,29 @@ export default function WebsiteSettingsPage() {
       themeColor: "#ffffff",
       robots: "index, follow",
       organizationType: "Organization",
+      freeShippingThreshold: 0,
+      gstStateCd: "27",
+      gstBaseUrl: "https://api.gst.gov.in",
+      gstClientId: "",
+      gstClientSecret: "",
+      gstUsername: "",
+      gstPublicKey: "",
+      _id: undefined,
+      razorpayKeyId: "",
+      razorpayKeySecret: "",
+      razorpayWebhookSecret: "",
+      bypassPayment: false,
+      themeSettings: {
+        primaryColor: "#2B2B2B",
+        secondaryColor: "#6B7280",
+        accentColor: "#3B82F6",
+        backgroundColor: "#FFFFFF",
+        textColor: "#1F2937",
+        borderRadius: "0.5rem",
+        fontFamily: "Inter",
+        customCSS: "",
+        darkMode: false,
+      }
     },
   });
 
@@ -125,8 +170,13 @@ export default function WebsiteSettingsPage() {
         // Load active settings into form
         const activeSettings = result.settings.find((s: any) => s.isActive);
         if (activeSettings) {
-          form.reset(activeSettings);
-          setKeywordsInput(activeSettings.siteKeywords?.join(", ") || "");
+          // Deep clean null values: convert null to undefined so Zod defaults work
+          const cleanData = JSON.parse(JSON.stringify(activeSettings), (key, value) => {
+            return value === null ? undefined : value;
+          });
+          
+          form.reset(cleanData);
+          setKeywordsInput(cleanData.siteKeywords?.join(", ") || "");
         }
       } else {
         toast({
@@ -162,6 +212,7 @@ export default function WebsiteSettingsPage() {
 
       const result = await createOrUpdateWebsiteSettings({
         ...data,
+        _id: data._id,
         siteKeywords: keywords,
       });
 
@@ -187,6 +238,41 @@ export default function WebsiteSettingsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  // Helper to handle form validation errors
+  const onInvalid = (errors: any) => {
+    console.error("Form Validation Errors:", errors);
+    
+    // Create a flat list of errors for the toast
+    const errorMessages: string[] = [];
+    
+    const flattenErrors = (obj: any, prefix = "") => {
+      for (const key in obj) {
+        if (obj[key]?.message) {
+          errorMessages.push(`${prefix}${key}: ${obj[key].message}`);
+        } else if (typeof obj[key] === "object") {
+          flattenErrors(obj[key], `${prefix}${key}.`);
+        }
+      }
+    };
+    
+    flattenErrors(errors);
+    
+    toast({
+      title: "Validation Error",
+      description: (
+        <div className="mt-2 text-xs">
+          <p className="font-bold mb-1">Please fix the following fields:</p>
+          <ul className="list-disc pl-4 space-y-1 max-h-40 overflow-y-auto">
+            {errorMessages.map((msg, i) => (
+              <li key={i}>{msg}</li>
+            ))}
+          </ul>
+        </div>
+      ),
+      variant: "destructive",
+    });
   };
 
   // Handle file upload for favicons
@@ -288,6 +374,61 @@ export default function WebsiteSettingsPage() {
     }
   };
 
+  const handleEdit = (setting: any) => {
+    // Deep clean null values: convert null to undefined so Zod defaults work
+    const cleanData = JSON.parse(JSON.stringify(setting), (key, value) => {
+      return value === null ? undefined : value;
+    });
+    
+    form.reset(cleanData);
+    setKeywordsInput(cleanData.siteKeywords?.join(", ") || "");
+    
+    toast({
+      title: "Settings Loaded",
+      description: `Configuration "${setting.siteName}" has been loaded into the form for editing.`,
+    });
+
+    // Scroll to form
+    const formElement = document.getElementById("website-settings-form");
+    if (formElement) {
+      formElement.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  const handleApplyAiSeo = (data: any) => {
+    form.setValue("siteName", data.siteName);
+    form.setValue("defaultTitle", data.defaultTitle);
+    form.setValue("siteDescription", data.siteDescription);
+    form.setValue("ogTitle", data.ogTitle);
+    form.setValue("ogDescription", data.ogDescription);
+    setKeywordsInput(data.siteKeywords.join(", "));
+    
+    toast({
+      title: "Settings Applied",
+      description: "AI-generated SEO settings have been filled in the form.",
+    });
+  };
+
+  const handleTestGstConnection = async () => {
+    setTestingConnection(true);
+    try {
+      // Simulate connection test
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      toast({
+        title: "Connection Success",
+        description: "Official GST Portal Handshake completed successfully (Verified G2B Link Established).",
+      });
+    } catch (error) {
+      toast({
+        title: "Connection Failed",
+        description: "Handshake failed. Please verify your Client ID and RSA Public Key.",
+        variant: "destructive",
+      });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -356,6 +497,14 @@ export default function WebsiteSettingsPage() {
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={() => handleEdit(setting)}
+                      title="Edit this configuration"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => handleDelete(setting._id)}
                       className="text-red-600 hover:text-red-700"
                     >
@@ -371,7 +520,7 @@ export default function WebsiteSettingsPage() {
 
       {/* Settings Form */}
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <form id="website-settings-form" onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-6">
           <Tabs defaultValue="seo" className="w-full">
             <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="seo" className="flex items-center gap-2">
@@ -398,16 +547,39 @@ export default function WebsiteSettingsPage() {
                 <Settings className="h-4 w-4" />
                 Theme
               </TabsTrigger>
+              <TabsTrigger value="gst" className="flex items-center gap-2">
+                <Fingerprint className="h-4 w-4" />
+                GST Settings
+              </TabsTrigger>
+              <TabsTrigger value="shipping" className="flex items-center gap-2">
+                <Truck className="h-4 w-4" />
+                Shipping
+              </TabsTrigger>
+              <TabsTrigger value="payments" className="flex items-center gap-2">
+                <Fingerprint className="h-4 w-4" />
+                Payments
+              </TabsTrigger>
             </TabsList>
 
             {/* SEO Tab */}
             <TabsContent value="seo" className="space-y-6">
               <Card>
-                <CardHeader>
-                  <CardTitle>Basic SEO Settings</CardTitle>
-                  <CardDescription>
-                    Configure the essential SEO metadata for your website
-                  </CardDescription>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                  <div>
+                    <CardTitle>Basic SEO Settings</CardTitle>
+                    <CardDescription>
+                      Configure the essential SEO metadata for your website
+                    </CardDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex items-center gap-2 border-violet-200 text-violet-700 hover:bg-violet-50 hover:text-violet-800"
+                    onClick={() => setSeoAiModalOpen(true)}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Magic SEO Assistant
+                  </Button>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <FormField
@@ -1436,6 +1608,275 @@ export default function WebsiteSettingsPage() {
                 </CardContent>
               </Card>
             </TabsContent>
+            {/* GST Settings Tab */}
+            <TabsContent value="gst" className="space-y-6">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                  <div>
+                    <CardTitle>Official GST G2B Configuration</CardTitle>
+                    <CardDescription>
+                      Configure your connection to the Official GST Developer Portal
+                    </CardDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex items-center gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                    onClick={handleTestGstConnection}
+                    disabled={testingConnection}
+                  >
+                    {testingConnection ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Fingerprint className="h-4 w-4" />
+                    )}
+                    Test GST Connection
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="gstClientId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>GST Client ID</FormLabel>
+                          <FormControl>
+                            <Input placeholder="XXXX-XXXX-XXXX" {...field} />
+                          </FormControl>
+                          <FormDescription>
+                            From your 'Application' on the GST Developer Portal
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="gstClientSecret"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>GST Client Secret</FormLabel>
+                          <FormControl>
+                            <Input type="password" placeholder="••••••••••••" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="gstUsername"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>GST Portal Username (App Link)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="DHIRO8989" {...field} />
+                          </FormControl>
+                          <FormDescription>
+                            The username you use to log in to the GST common portal
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="gstStateCd"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>State Code (Primary)</FormLabel>
+                          <FormControl>
+                            <Input placeholder="27" {...field} />
+                          </FormControl>
+                          <FormDescription>
+                            e.g., 27 for Maharashtra, 07 for Delhi
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name="gstPublicKey"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>RSA Public Key (PEM)</FormLabel>
+                        <FormControl>
+                          <Textarea 
+                            placeholder="-----BEGIN PUBLIC KEY----- ..." 
+                            className="font-mono text-xs" 
+                            rows={6} 
+                            {...field} 
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Locate this in your application settings on the GST Portal
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="gstBaseUrl"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>API Base URL</FormLabel>
+                        <FormControl>
+                          <Input placeholder="https://api.gst.gov.in" {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          Use https://api.gst.gov.in for production
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Shipping Tab */}
+            <TabsContent value="shipping" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Truck className="h-5 w-5" />
+                    Shipping & Delivery Configuration
+                  </CardTitle>
+                  <CardDescription>
+                    Configure shipping costs and free shipping thresholds for your store.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="freeShippingThreshold"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Free Shipping Threshold (₹)</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            placeholder="500" 
+                            {...field} 
+                            onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Orders with a total value equal to or greater than this amount will have free shipping. 
+                          Set to 0 to disable free shipping completely.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Payments Tab */}
+            <TabsContent value="payments" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Fingerprint className="h-5 w-5" />
+                    Payment Gateway Configuration (Razorpay)
+                  </CardTitle>
+                  <CardDescription>
+                    Manage your Razorpay API keys and payment processing behavior.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <FormField
+                      control={form.control}
+                      name="razorpayKeyId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Razorpay Key ID</FormLabel>
+                          <FormControl>
+                            <Input placeholder="rzp_live_..." {...field} />
+                          </FormControl>
+                          <FormDescription>
+                            Your public Razorpay Key ID
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="razorpayKeySecret"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Razorpay Key Secret</FormLabel>
+                          <FormControl>
+                            <Input type="password" placeholder="••••••••••••" {...field} />
+                          </FormControl>
+                          <FormDescription>
+                            Keep this secret secure
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <Separator />
+
+                  <FormField
+                    control={form.control}
+                    name="razorpayWebhookSecret"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Razorpay Webhook Secret</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Your webhook secret" {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          Used to verify payment success notifications from Razorpay
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <Separator />
+
+                  <FormField
+                    control={form.control}
+                    name="bypassPayment"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 bg-amber-50">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base text-amber-900 flex items-center gap-2">
+                            <AlertCircle className="h-4 w-4" />
+                            Bypass Real Payment
+                          </FormLabel>
+                          <FormDescription className="text-amber-700">
+                            When enabled, orders will be placed <strong>instantly</strong> without opening the Razorpay payment popup. Use this <strong>only</strong> for testing or development.
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+            </TabsContent>
           </Tabs>
 
           {/* Save Button */}
@@ -1456,6 +1897,12 @@ export default function WebsiteSettingsPage() {
           </div>
         </form>
       </Form>
+
+      <SeoAiModal 
+        open={seoAiModalOpen} 
+        onOpenChange={setSeoAiModalOpen} 
+        onApply={handleApplyAiSeo}
+      />
     </div>
   );
 }

@@ -29,6 +29,7 @@ export async function getProducts() {
         sampleName: p.name,
         price: firstSize?.price || firstSubProduct?.price || 60,
         image,
+        samples: p.samples || [], // Include product's predefined samples
       };
     });
 
@@ -104,8 +105,11 @@ export async function updateSampleSettings(data: any) {
   }
 }
 
-export async function uploadSampleBanner(base64Image: string) {
+export async function uploadSampleBanner(base64Image: string, oldPublicId?: string) {
   try {
+    if (oldPublicId) {
+      await cloudinary.uploader.destroy(oldPublicId);
+    }
     const uploadResponse = await cloudinary.uploader.upload(base64Image, {
       folder: "samples",
     });

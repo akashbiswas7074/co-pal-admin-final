@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-const bcrypt = require("bcrypt");
+import bcrypt from "bcryptjs";
 const jwt = require("jsonwebtoken");
 
 const vendorSchema = new mongoose.Schema({

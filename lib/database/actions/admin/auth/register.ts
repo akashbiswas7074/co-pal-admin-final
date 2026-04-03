@@ -3,7 +3,7 @@
 import { connectToDatabase } from "@/lib/database/connect";
 import Vendor from "@/lib/database/models/vendor.model";
 import { cookies } from "next/headers";
-const bcrypt = require("bcrypt");
+import bcrypt from "bcryptjs";
 
 export const registerVendor = async (
   name: string,

@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { Skeleton } from "./skeleton";
 import { Button } from "./button";
 import { Card, CardContent } from "./card";
-import { Eye, Code, Type } from "lucide-react";
+import { Eye, Code, Type, Sparkles } from "lucide-react";
 
 // Import Jodit Editor with dynamic import
 const JoditEditor = dynamic(() => import("jodit-react"), {
@@ -80,7 +80,21 @@ export const createJoditConfig = (isMobile: boolean, height: number, placeholder
     style: {
       fontSize: '16px',
       lineHeight: '1.6',
+      fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+      color: '#374151'
     },
+    extraStyles: `
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+      body { 
+        font-family: 'Inter', sans-serif !important; 
+        color: #374151;
+        line-height: 1.6;
+      }
+      p { margin-bottom: 1rem; }
+      ul, ol { margin-bottom: 1rem; padding-left: 1.5rem; }
+      li { margin-bottom: 0.5rem; }
+      h1, h2, h3 { font-weight: 600; color: #111827; margin-top: 1.5rem; margin-bottom: 0.75rem; }
+    `
   };
 };
 
@@ -137,39 +151,50 @@ export function RichTextEditor({
   return (
     <div className={`relative space-y-2 ${className || ''}`}>
       {/* Simple Tab Controls */}
-      <div className="flex gap-2 border-b pb-2">
-        <Button
-          type="button"
-          variant={viewMode === 'edit' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setViewMode('edit')}
-        >
-          <Type className="w-4 h-4 mr-1" />
-          Edit
-        </Button>
-        <Button
-          type="button"
-          variant={viewMode === 'preview' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setViewMode('preview')}
-        >
-          <Eye className="w-4 h-4 mr-1" />
-          Preview
-        </Button>
-        <Button
-          type="button"
-          variant={viewMode === 'code' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setViewMode('code')}
-        >
-          <Code className="w-4 h-4 mr-1" />
-          HTML
-        </Button>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-muted/50 to-background p-3 border rounded-t-xl group">
+        <div className="flex gap-1.5 p-1 bg-muted/30 rounded-lg border w-fit">
+          <Button
+            type="button"
+            variant={viewMode === 'edit' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('edit')}
+            className={`h-8 transition-all ${viewMode === 'edit' ? 'shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Type className="w-3.5 h-3.5 mr-1.5" />
+            <span className="font-medium text-xs">Edit Content</span>
+          </Button>
+          <Button
+            type="button"
+            variant={viewMode === 'preview' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('preview')}
+            className={`h-8 transition-all ${viewMode === 'preview' ? 'shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Eye className="w-3.5 h-3.5 mr-1.5" />
+            <span className="font-medium text-xs">Live Preview</span>
+          </Button>
+          <Button
+            type="button"
+            variant={viewMode === 'code' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('code')}
+            className={`h-8 transition-all ${viewMode === 'code' ? 'shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Code className="w-3.5 h-3.5 mr-1.5" />
+            <span className="font-medium text-xs">View HTML</span>
+          </Button>
+        </div>
+        
+        <div className="hidden sm:flex items-center gap-2 text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider bg-background/50 px-2.5 py-1 rounded-full border border-primary/5">
+          <Sparkles className="w-3 h-3 text-primary animate-pulse" />
+          Pro Editor Active
+        </div>
       </div>
+
 
       {/* Editor Mode */}
       {viewMode === 'edit' && (
-        <div className="border rounded-md">
+        <div className="border border-t-0 rounded-b-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border-muted flex flex-col min-h-[400px]">
           <JoditEditor
             ref={editorRef}
             value={localContent}
@@ -181,14 +206,14 @@ export function RichTextEditor({
 
       {/* Preview Mode */}
       {viewMode === 'preview' && (
-        <Card>
-          <CardContent className="p-4">
+        <div className="border border-t-0 rounded-b-xl bg-gray-50 overflow-hidden flex flex-col min-h-[400px]">
+          <div className="p-1 gap-4 flex-1 overflow-auto max-h-[800px]">
             <div
-              className="prose max-w-none min-h-[300px] bg-white rounded-md p-4 border"
+              className="prose prose-slate max-w-none min-h-[400px] bg-white rounded-lg p-8 shadow-inner border border-gray-100 prose-headings:font-bold prose-p:text-gray-600 prose-li:text-gray-600"
               dangerouslySetInnerHTML={{ __html: localContent }}
             />
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* Code Mode */}

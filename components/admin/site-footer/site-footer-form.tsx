@@ -60,6 +60,7 @@ const footerSchema = z.object({
   companyLinks: z.array(linkItemSchema).optional(),
   shopLinks: z.array(linkItemSchema).optional(),
   helpLinks: z.array(linkItemSchema).optional(),
+  policyLinks: z.array(linkItemSchema).optional(),
   copyrightText: z.string().min(1, { message: "Copyright text is required" }),
   isActive: z.boolean().default(false),
   showFooterName: z.boolean().default(true),
@@ -97,6 +98,15 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
     { title: "Shipping", url: "/shipping" }
   ];
 
+  // Set default policy links
+  const defaultPolicyLinks = [
+    { title: "Privacy Policy", url: "/privacy-policy" },
+    { title: "Cookie Policy", url: "/cookie-policy" },
+    { title: "Returns & Cancellations", url: "/returns-and-cancellations" },
+    { title: "Shipping & Delivery", url: "/shipping-and-delivery" },
+    { title: "Terms & Conditions", url: "/terms-and-conditions" }
+  ];
+
   const [companyLinks, setCompanyLinks] = useState<{ title: string; url: string }[]>(
     initialData.length > 0 && initialData[0]?.companyLinks?.length
       ? [...initialData[0].companyLinks]
@@ -113,6 +123,12 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
     initialData.length > 0 && initialData[0]?.helpLinks?.length
       ? [...initialData[0].helpLinks]
       : [...defaultHelpLinks]
+  );
+
+  const [policyLinks, setPolicyLinks] = useState<{ title: string; url: string }[]>(
+    initialData.length > 0 && initialData[0]?.policyLinks?.length
+      ? [...initialData[0].policyLinks]
+      : [...defaultPolicyLinks]
   );
 
   // Set default values based on first item in initialData or use empty defaults
@@ -134,6 +150,7 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
       companyLinks: initialData[0]?.companyLinks || defaultCompanyLinks,
       shopLinks: initialData[0]?.shopLinks || defaultShopLinks,
       helpLinks: initialData[0]?.helpLinks || defaultHelpLinks,
+      policyLinks: initialData[0]?.policyLinks || defaultPolicyLinks,
       copyrightText: initialData[0]?.copyrightText || `© ${new Date().getFullYear()} Your Company. All rights reserved.`,
       isActive: initialData[0]?.isActive || false,
       showFooterName: initialData[0]?.showFooterName !== undefined ? initialData[0].showFooterName : true,
@@ -155,6 +172,7 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
       companyLinks: defaultCompanyLinks,
       shopLinks: defaultShopLinks,
       helpLinks: defaultHelpLinks,
+      policyLinks: defaultPolicyLinks,
       copyrightText: `© ${new Date().getFullYear()} Your Company. All rights reserved.`,
       isActive: true, // First footer will be active by default
       showFooterName: true,
@@ -187,8 +205,8 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
           linkedin: activeFooter?.socialMedia?.linkedin || "",
         },
         copyrightText: activeFooter?.copyrightText || defaultValues.copyrightText,
-        isActive: activeFooter?.isActive || defaultValues.isActive,
-        showFooterName: activeFooter?.showFooterName !== undefined ? activeFooter.showFooterName : true,
+        isActive: activeFooter?.isActive ?? defaultValues.isActive,
+        showFooterName: activeFooter?.showFooterName ?? defaultValues.showFooterName,
       });
 
       // Update link arrays if they exist
@@ -202,6 +220,10 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
 
       if (activeFooter?.helpLinks?.length) {
         setHelpLinks([...activeFooter.helpLinks]);
+      }
+
+      if (activeFooter?.policyLinks?.length) {
+        setPolicyLinks([...activeFooter.policyLinks]);
       }
     }
   }, [initialData, form]);
@@ -227,8 +249,8 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
           linkedin: selectedFooter?.socialMedia?.linkedin || "",
         },
         copyrightText: selectedFooter?.copyrightText || "",
-        isActive: selectedFooter?.isActive || false,
-        showFooterName: selectedFooter?.showFooterName !== undefined ? selectedFooter.showFooterName : true,
+        isActive: selectedFooter?.isActive ?? false,
+        showFooterName: selectedFooter?.showFooterName ?? true,
       });
 
       // Update link arrays
@@ -248,6 +270,12 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
         setHelpLinks([...selectedFooter.helpLinks]);
       } else {
         setHelpLinks([...defaultHelpLinks]);
+      }
+
+      if (selectedFooter?.policyLinks?.length) {
+        setPolicyLinks([...selectedFooter.policyLinks]);
+      } else {
+        setPolicyLinks([...defaultPolicyLinks]);
       }
     }
   };
@@ -309,11 +337,16 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
       copyrightText: `© ${new Date().getFullYear()} Your Company. All rights reserved.`,
       isActive: false,
       showFooterName: true,
+      companyLinks: [...defaultCompanyLinks],
+      shopLinks: [...defaultShopLinks],
+      helpLinks: [...defaultHelpLinks],
+      policyLinks: [...defaultPolicyLinks],
     });
 
     setCompanyLinks([...defaultCompanyLinks]);
     setShopLinks([...defaultShopLinks]);
     setHelpLinks([...defaultHelpLinks]);
+    setPolicyLinks([...defaultPolicyLinks]);
   };
 
   async function onSubmit(data: FooterFormValues) {
@@ -324,6 +357,7 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
       companyLinks: companyLinks.filter(link => link.title && link.url),
       shopLinks: shopLinks.filter(link => link.title && link.url),
       helpLinks: helpLinks.filter(link => link.title && link.url),
+      policyLinks: policyLinks.filter(link => link.title && link.url),
     };
 
     setIsSubmitting(true);
@@ -406,6 +440,21 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
 
   const removeHelpLink = (index: number) => {
     setHelpLinks(helpLinks.filter((_, i) => i !== index));
+  };
+
+  // Link management functions for policy links
+  const addPolicyLink = () => {
+    setPolicyLinks([...policyLinks, { title: "", url: "" }]);
+  };
+
+  const updatePolicyLink = (index: number, field: 'title' | 'url', value: string) => {
+    const updatedLinks = [...policyLinks];
+    updatedLinks[index] = { ...updatedLinks[index], [field]: value };
+    setPolicyLinks(updatedLinks);
+  };
+
+  const removePolicyLink = (index: number) => {
+    setPolicyLinks(policyLinks.filter((_, i) => i !== index));
   };
 
   return (
@@ -848,6 +897,49 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
                           size="icon"
                           variant="ghost"
                           onClick={() => removeHelpLink(index)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Policy Links */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-medium">Policy Links</h3>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={addPolicyLink}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Link
+                      </Button>
+                    </div>
+
+                    {policyLinks.map((link, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <Input
+                            placeholder="Link Title"
+                            value={link.title}
+                            onChange={(e) => updatePolicyLink(index, 'title', e.target.value)}
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <Input
+                            placeholder="URL (e.g., /privacy-policy)"
+                            value={link.url}
+                            onChange={(e) => updatePolicyLink(index, 'url', e.target.value)}
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => removePolicyLink(index)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>

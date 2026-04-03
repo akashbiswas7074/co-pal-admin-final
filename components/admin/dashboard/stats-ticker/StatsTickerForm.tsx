@@ -20,7 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { Plus, Trash, MoveUp, MoveDown } from "lucide-react";
 
 const itemSchema = z.object({
-    emoji: z.string().min(1, "Emoji is required"),
+    emoji: z.string().optional(),
     label: z.string().min(1, "Label is required"),
 });
 

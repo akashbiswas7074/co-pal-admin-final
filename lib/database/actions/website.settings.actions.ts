@@ -46,23 +46,40 @@ export const getAllWebsiteSettings = async () => {
 };
 
 // Create or update website settings
-export const createOrUpdateWebsiteSettings = async (data: Partial<IWebsiteSettings>) => {
+export const createOrUpdateWebsiteSettings = async (data: Partial<IWebsiteSettings> & { _id?: string }) => {
   try {
     await connectToDatabase();
     
-    // First, deactivate all existing settings
-    await WebsiteSettings.updateMany({}, { isActive: false });
-    
-    // Create new settings or update existing one
-    const settings = await WebsiteSettings.findOneAndUpdate(
-      { isActive: true },
-      { ...data, isActive: true },
-      { 
-        new: true, 
-        upsert: true,
-        runValidators: true
-      }
-    );
+    let settings;
+    const { _id, ...updateData } = data;
+
+    if (_id) {
+      // Update specific record and ensure it's active
+      settings = await WebsiteSettings.findByIdAndUpdate(
+        _id,
+        { ...updateData, isActive: true },
+        { new: true, runValidators: true }
+      );
+    } else {
+      // Find active and update, or create new if none active
+      settings = await WebsiteSettings.findOneAndUpdate(
+        { isActive: true },
+        { ...updateData, isActive: true },
+        { 
+          new: true, 
+          upsert: true,
+          runValidators: true
+        }
+      );
+    }
+
+    if (settings && settings.isActive) {
+      // Deactivate all OTHER settings once we have a successfully saved active setting
+      await WebsiteSettings.updateMany(
+        { _id: { $ne: settings._id } }, 
+        { isActive: false }
+      );
+    }
     
     return {
       success: true,
@@ -240,6 +257,79 @@ export const updateOrganizationSchema = async (orgData: {
     return {
       success: false,
       message: error.message || "Failed to update organization schema"
+    };
+  }
+};
+
+// Update GST configuration
+export const updateGstSettings = async (gstData: {
+  gstClientId?: string;
+  gstClientSecret?: string;
+  gstUsername?: string;
+  gstPublicKey?: string;
+  gstStateCd?: string;
+  gstBaseUrl?: string;
+}) => {
+  try {
+    await connectToDatabase();
+    
+    const settings = await WebsiteSettings.findOneAndUpdate(
+      { isActive: true },
+      { $set: gstData },
+      { new: true, runValidators: true }
+    );
+    
+    if (!settings) {
+      return {
+        success: false,
+        message: "No active website settings found"
+      };
+    }
+    
+    return {
+      success: true,
+      message: "GST settings updated successfully",
+      settings: JSON.parse(JSON.stringify(settings))
+    };
+  } catch (error: any) {
+    console.error("Error updating GST settings:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to update GST settings"
+    };
+  }
+};
+
+// Update Shipping configuration
+export const updateShippingSettings = async (shippingData: {
+  freeShippingThreshold?: number;
+}) => {
+  try {
+    await connectToDatabase();
+    
+    const settings = await WebsiteSettings.findOneAndUpdate(
+      { isActive: true },
+      { $set: shippingData },
+      { new: true, runValidators: true }
+    );
+    
+    if (!settings) {
+      return {
+        success: false,
+        message: "No active website settings found"
+      };
+    }
+    
+    return {
+      success: true,
+      message: "Shipping settings updated successfully",
+      settings: JSON.parse(JSON.stringify(settings))
+    };
+  } catch (error: any) {
+    console.error("Error updating shipping settings:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to update shipping settings"
     };
   }
 };

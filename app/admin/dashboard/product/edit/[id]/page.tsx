@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import dynamic from 'next/dynamic';
-import { X } from 'lucide-react';
 import { useParams, useRouter } from "next/navigation";
 
 // Shadcn UI Components
@@ -25,12 +24,21 @@ import {
   Upload,
   Info,
   ArrowRight,
+  X,
+  Sparkles,
+  Loader2,
+  Eye,
+  Type,
+  Code,
+  Monitor,
+  Smartphone
 } from "lucide-react";
 
 import {
   updateProduct,
   getParentsandCategories,
   getEntireProductById,
+  getSamplesByProductId
 } from "@/lib/database/actions/admin/products/products.actions";
 import { getSubCategoriesByCategoryParent } from "@/lib/database/actions/admin/subCategories/subcategories.actions";
 import { getTagsBySubCategory, getTagsByCategory } from "@/lib/database/actions/admin/tags/tags.actions";
@@ -39,30 +47,43 @@ import { getTagsBySubCategory, getTagsByCategory } from "@/lib/database/actions/
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { convertToWebP } from "@/lib/image-utils";
 import { analyzeProductImage } from "@/lib/ai-service";
-import { Sparkles, Loader2 } from "lucide-react";
 
 import { joditConfig } from "@/components/ui/rich-text-editor";
 
 const PreviewContent = ({ content, mode, onClose }: { content: string; mode: 'desktop' | 'mobile'; onClose: () => void }) => {
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className={`bg-white rounded-lg overflow-hidden flex flex-col ${mode === 'desktop' ? 'w-[80%] h-[80%]' : 'w-[375px] h-[80%]'}`}>
-        <div className="flex justify-between items-center bg-gray-100 px-4 py-2">
-          <h3 className="font-medium">{mode === 'desktop' ? 'Desktop' : 'Mobile'} Preview</h3>
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 transition-all duration-300">
+      <div className={`bg-white shadow-2xl rounded-2xl overflow-hidden flex flex-col border border-slate-200 transition-all ${mode === 'desktop' ? 'w-[90%] h-[90%] max-w-6xl' : 'w-[400px] h-[85%]'}`}>
+        <div className="flex justify-between items-center bg-slate-50/80 backdrop-blur px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className={`w-3 h-3 rounded-full ${mode === 'desktop' ? 'bg-indigo-400' : 'bg-rose-400'}`} />
+            <h3 className="font-semibold text-slate-800 text-sm tracking-tight uppercase tracking-[0.1em]">{mode === 'desktop' ? 'Desktop' : 'Mobile'} Experience</h3>
+          </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-full hover:bg-gray-200"
+            className="p-2 rounded-full hover:bg-slate-200/50 text-slate-400 hover:text-slate-600 transition-all"
+            title="Close Preview"
           >
-            <X size={20} />
+            <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="flex-1 overflow-auto p-4">
-          <div className={`${mode === 'mobile' ? 'max-w-[375px] mx-auto' : 'w-full'} bg-white h-full overflow-y-auto`}>
-            <div
-              className="prose max-w-none"
-              dangerouslySetInnerHTML={{ __html: content }}
-            />
+        <div className="flex-1 overflow-auto bg-slate-100/30 p-6 sm:p-10">
+          <div className={`${mode === 'mobile' ? 'max-w-[375px] mx-auto border-[8px] border-slate-800 rounded-[3rem] shadow-2xl bg-white aspect-[9/19] h-full relative overflow-hidden' : 'w-full bg-white rounded-xl shadow-sm min-h-full border border-slate-100'} overflow-y-auto`}>
+            {mode === 'mobile' && (
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-24 h-6 bg-slate-800 rounded-b-xl z-10 flex items-center justify-center">
+                <div className="w-8 h-1 bg-slate-700/50 rounded-full" />
+              </div>
+            )}
+            <div className={`p-6 sm:p-12 ${mode === 'mobile' ? 'pt-10' : ''}`}>
+              <div
+                className="prose prose-slate max-w-none prose-headings:font-bold prose-p:text-slate-600 prose-li:text-slate-600 prose-headings:text-slate-800 prose-img:rounded-2xl"
+                dangerouslySetInnerHTML={{ __html: content }}
+              />
+            </div>
           </div>
+        </div>
+        <div className="bg-slate-50/50 px-6 py-3 border-t border-slate-100 flex justify-center">
+          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-[0.2em]">Live Preview Simulation</p>
         </div>
       </div>
     </div>
@@ -109,11 +130,11 @@ const EditProductPage = () => {
     details: [{ name: "", value: "" }],
     tagValues: [],
     shippingDimensions: {
-      length: "",
-      breadth: "",
       height: "",
       weight: "",
     },
+    isSampleAvailable: false,
+    samples: [{ value: "", unit: "ml", price: "" }],
   });
 
   const [formErrors, setFormErrors] = useState<any>({});
@@ -184,6 +205,24 @@ const EditProductPage = () => {
           // Set featured status
           setFeaturedCheck(product.featured || false);
 
+          // Fetch samples
+          try {
+            const fetchedSamples = await getSamplesByProductId(productId);
+            if (fetchedSamples && fetchedSamples.length > 0) {
+                setFormValues((prev: any) => ({
+                ...prev,
+                isSampleAvailable: true,
+                samples: fetchedSamples.map((s: any) => ({
+                  value: s.value?.toString() || "",
+                  unit: s.unit || "ml",
+                  price: s.price?.toString() || ""
+                }))
+              }));
+            }
+          } catch (sampleErr) {
+            console.error("Error fetching samples for product:", sampleErr);
+          }
+
           setLoading(false);
         } else {
           toast({
@@ -205,6 +244,37 @@ const EditProductPage = () => {
 
     fetchProductData();
   }, [productId, router]);
+
+  // Sample management functions
+  const addSampleRow = () => {
+    setFormValues((prev: any) => ({
+      ...prev,
+      samples: [...prev.samples, { value: "", unit: "ml", price: "" }]
+    }));
+  };
+
+  const removeSampleRow = (index: number) => {
+    setFormValues((prev: any) => {
+      const newSamples = [...prev.samples];
+      newSamples.splice(index, 1);
+      return {
+        ...prev,
+        samples: newSamples.length > 0 ? newSamples : [{ value: "", unit: "ml", price: "" }]
+      };
+    });
+  };
+
+  const updateSampleRow = (index: number, field: string, value: string) => {
+    setFormValues((prev: any) => {
+      const newSamples = [...prev.samples];
+      newSamples[index] = { ...newSamples[index], [field]: value };
+      return {
+        ...prev,
+        samples: newSamples
+      };
+    });
+  };
+
 
   // Fetch tags when sub-categories or category change
   useEffect(() => {
@@ -726,7 +796,8 @@ const EditProductPage = () => {
           undefined, // qty
           undefined, // stock
           formValues.tagValues, // tagValues
-          formValues.shippingDimensions // shippingDimensions
+          formValues.shippingDimensions, // shippingDimensions
+          formValues.isSampleAvailable ? formValues.samples : [] // samples
         );
 
         if (result && result.success) {
@@ -781,7 +852,6 @@ const EditProductPage = () => {
           description: result.description || prev.description,
           longDescription: result.longDescription || prev.longDescription,
           sku: result.sku || prev.sku,
-          brand: result.brand || prev.brand,
           discount: result.discount ? (parseInt(result.discount.toString().replace(/[^0-9]/g, '')) || 0) : prev.discount,
           benefits: (result.benefits || []).map(b => ({ name: b })),
           ingredients: (result.ingredients || []).map(i => ({ name: i })),
@@ -1534,11 +1604,11 @@ const EditProductPage = () => {
                         />
                       </div>
                       <div>
-                        <Label htmlFor="shipping-weight" className="text-xs">Weight (kg)</Label>
+                        <Label htmlFor="shipping-weight" className="text-xs font-semibold">Weight (kg) <span className="text-red-500">*</span></Label>
                         <Input
                           id="shipping-weight"
                           type="number"
-                          placeholder="6"
+                          placeholder="0.5 (e.g. for 500 grams)"
                           value={formValues.shippingDimensions.weight}
                           onChange={(e) => setFormValues({
                             ...formValues,
@@ -1547,10 +1617,18 @@ const EditProductPage = () => {
                               weight: e.target.value
                             }
                           })}
-                          className="mt-1"
+                          className={`mt-1 ${parseFloat(formValues.shippingDimensions.weight) > 50 ? 'border-orange-400 focus:ring-orange-200' : ''}`}
                           min="0"
                           step="0.01"
                         />
+                        {parseFloat(formValues.shippingDimensions.weight) > 50 && (
+                          <p className="text-[10px] text-orange-600 mt-1 font-medium bg-orange-50 p-1 px-2 border border-orange-200 rounded">
+                            ⚠️ Large weight. Are you entering grams? (Use 0.5 for 500g)
+                          </p>
+                        )}
+                        {!parseFloat(formValues.shippingDimensions.weight) && (
+                          <p className="text-[10px] text-muted-foreground mt-1">E.g. 0.5 for a t-shirt or 2 for a box.</p>
+                        )}
                       </div>
                     </div>
                     {formValues.shippingDimensions.length && formValues.shippingDimensions.breadth && formValues.shippingDimensions.height && (
@@ -1863,8 +1941,94 @@ const EditProductPage = () => {
                     </div>
                   </div>
 
-                  {/* Note: Image upload functionality is not included in this edit page since it would need 
-                     the full image upload implementation which is complex. You may add it if needed. */}
+                  {/* Sample Availability Section */}
+                  <div className="space-y-4 pt-4 border-t">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label className="text-base text-gray-700 font-semibold flex items-center gap-2">
+                          <Plus size={18} className="text-blue-600" />
+                          Sample Available
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          Toggle if this product has smaller trial samples
+                        </p>
+                      </div>
+                      <Switch
+                        checked={formValues.isSampleAvailable}
+                        onCheckedChange={(checked) => setFormValues((prev: any) => ({ ...prev, isSampleAvailable: checked }))}
+                      />
+                    </div>
+
+                    {formValues.isSampleAvailable && (
+                      <div className="space-y-4 p-5 border-2 border-dashed border-blue-100 rounded-xl bg-blue-50/30">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm font-bold text-blue-800">Sample Pricing Options</Label>
+                          <Button 
+                            type="button" 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={addSampleRow}
+                            className="h-9 px-4 border-blue-200 hover:bg-blue-100 text-blue-700 font-medium transition-all"
+                          >
+                            <Plus className="h-4 w-4 mr-2" /> Add Package Size
+                          </Button>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-[1fr,1.4fr,1.6fr,auto] gap-4 px-2 text-[10px] font-bold text-blue-900 uppercase tracking-wider">
+                            <div>Value</div>
+                            <div>Unit</div>
+                            <div>Price (₹)</div>
+                            <div className="w-10"></div>
+                          </div>
+                          
+                          {formValues.samples?.map((sample: any, index: number) => (
+                            <div key={index} className="grid grid-cols-[1fr,1.4fr,1.6fr,auto] gap-4 items-center bg-white p-3 rounded-lg border border-blue-100 shadow-sm">
+                              <Input
+                                type="number"
+                                placeholder="5"
+                                value={sample.value}
+                                onChange={(e: any) => updateSampleRow(index, "value", e.target.value)}
+                                className="h-10 text-center font-medium border-blue-50 focus:ring-blue-200"
+                              />
+                              <select
+                                value={sample.unit}
+                                onChange={(e: any) => updateSampleRow(index, "unit", e.target.value)}
+                                className="h-10 w-full rounded-lg border border-blue-50 bg-white px-3 py-1 text-sm shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-100 font-medium"
+                              >
+                                <option value="ml">ml (Milliliters)</option>
+                                <option value="g">g (Grams)</option>
+                                <option value="pcs">pcs (Pieces)</option>
+                                <option value="oz">oz (Ounces)</option>
+                              </select>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">₹</span>
+                                <Input
+                                  type="number"
+                                  placeholder="60"
+                                  value={sample.price}
+                                  onChange={(e: any) => updateSampleRow(index, "price", e.target.value)}
+                                  className="h-10 pl-7 font-bold text-gray-800 border-blue-50 focus:ring-blue-200"
+                                />
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeSampleRow(index)}
+                                className="h-9 w-9 text-red-400 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors"
+                              >
+                                <Trash className="h-5 w-5" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-[11px] text-blue-600 font-medium italic">
+                          💡 Samples will automatically be available as separate trial entries.
+                        </p>
+                      </div>
+                    )}
+                  </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="longDescription">Detailed Description</Label>
@@ -1883,24 +2047,26 @@ const EditProductPage = () => {
                       />
                     </div>
                     {/* Desktop & Mobile Preview Buttons */}
-                    <div className="flex items-center justify-end gap-2 mt-2">
+                    <div className="flex bg-muted/30 p-1 rounded-full border border-muted-foreground/10 w-fit ml-auto mt-2">
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
                         onClick={() => handlePreview('desktop')}
-                        className="text-xs"
+                        className="rounded-full h-8 px-4 gap-2 text-xs font-medium hover:bg-background hover:shadow-sm transition-all"
                       >
-                        Desktop Preview
+                        <Monitor className="w-3.5 h-3.5 text-indigo-500" />
+                        Desktop
                       </Button>
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
                         onClick={() => handlePreview('mobile')}
-                        className="text-xs"
+                        className="rounded-full h-8 px-4 gap-2 text-xs font-medium hover:bg-background hover:shadow-sm transition-all"
                       >
-                        Mobile Preview
+                        <Smartphone className="w-3.5 h-3.5 text-rose-500" />
+                        Mobile
                       </Button>
                     </div>
                   </div>

@@ -18,7 +18,7 @@ export interface IStatsTicker extends Document {
 }
 
 const StatsTickerItemSchema = new Schema<IStatsTickerItem>({
-    emoji: { type: String, required: true },
+    emoji: { type: String, required: false },
     label: { type: String, required: true },
 });
 

@@ -38,6 +38,13 @@ export async function GET(request: NextRequest) {
         { title: "FAQs", url: "/faqs" },
         { title: "Shipping", url: "/shipping" }
       ],
+      policyLinks: [
+        { title: "Privacy Policy", url: "/privacy-policy" },
+        { title: "Cookie Policy", url: "/cookie-policy" },
+        { title: "Returns & Cancellations", url: "/returns-and-cancellations" },
+        { title: "Shipping & Delivery", url: "/shipping-and-delivery" },
+        { title: "Terms & Conditions", url: "/terms-and-conditions" }
+      ],
       copyrightText: "© 2025 VIBECart. All rights reserved.",
       isActive: true
     };
@@ -119,6 +126,12 @@ export async function POST(request: NextRequest) {
         : [],
       helpLinks: Array.isArray(data.helpLinks)
         ? data.helpLinks.filter((link: any) => link.title && link.url).map((link: any) => ({
+          title: link.title.trim(),
+          url: link.url.trim()
+        }))
+        : [],
+      policyLinks: Array.isArray(data.policyLinks)
+        ? data.policyLinks.filter((link: any) => link.title && link.url).map((link: any) => ({
           title: link.title.trim(),
           url: link.url.trim()
         }))

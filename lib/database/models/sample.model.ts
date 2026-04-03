@@ -27,6 +27,20 @@ const sampleSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    variant: {
+      type: String,
+      default: "5ml",
+    },
+    value: {
+      type: Number,
+    },
+    unit: {
+      type: String,
+    },
+    publicId: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,
