@@ -259,6 +259,11 @@ const navigationItems: NavSection[] = [
         href: "/admin/dashboard/preloader-settings",
         icon: <FaRegRectangleList size={20} />,
         label: "Preloader Settings"
+      },
+      {
+        href: "/admin/dashboard/shops",
+        icon: <FaWarehouse size={20} />,
+        label: "Nearby Shops Management"
       }
     ]
   },
