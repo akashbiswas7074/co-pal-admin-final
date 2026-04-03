@@ -223,7 +223,7 @@ const navigationItems: NavSection[] = [
     ]
   },
   {
-    title: "Design & Settings",
+    title: "Website Configuration",
     items: [
       {
         href: "/admin/dashboard/website-logos",
@@ -239,6 +239,11 @@ const navigationItems: NavSection[] = [
         href: "/admin/dashboard/navbar-settings",
         icon: <IconSettings size={18} />,
         label: "Navbar Global Settings"
+      },
+      {
+        href: "/admin/dashboard/navbar-links",
+        icon: <FaLayerGroup size={20} />,
+        label: "Navbar Sections"
       },
       {
         href: "/admin/dashboard/footer-settings",
@@ -284,11 +289,6 @@ const navigationItems: NavSection[] = [
         href: "/admin/dashboard/website-sections/category-sections",
         icon: <FaLayerGroup size={20} />,
         label: "Category Sections"
-      },
-      {
-        href: "/admin/dashboard/navbar-links",
-        icon: <FaLayerGroup size={20} />,
-        label: "Navbar Sections"
       },
       {
         href: "/admin/dashboard/faq",
