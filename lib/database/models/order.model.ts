@@ -7,7 +7,14 @@ const OrderItemSchema = new mongoose.Schema({
   product: {
     type: ObjectId,
     ref: "Product",
-    required: true,
+  },
+  sample: {
+    type: ObjectId,
+    ref: "Sample",
+  },
+  isSample: {
+    type: Boolean,
+    default: false,
   },
   name: {
     type: String,
@@ -402,6 +409,11 @@ orderSchema.index({ createdAt: -1 });
 orderSchema.index({ razorpay_order_id: 1 });
 orderSchema.index({ paymentIntentId: 1 });
 orderSchema.index({ status: 1 });
+
+// Delete existing model only in development to force schema updates
+if (process.env.NODE_ENV === 'development') {
+  delete (mongoose as any).models.Order;
+}
 
 const Order = mongoose.models.Order || mongoose.model("Order", orderSchema);
 export default Order;

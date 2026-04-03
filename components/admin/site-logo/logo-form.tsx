@@ -27,7 +27,8 @@ const logoSchema = z.object({
   logoUrl: z.string().url({ message: "Must be a valid URL" }),
   altText: z.string().min(1, { message: "Alt text is required" }),
   mobileLogoUrl: z.string().url({ message: "Must be a valid URL" }).optional(),
-  isActive: z.boolean().default(false),
+  authBackgroundUrl: z.string().url({ message: "Must be a valid URL" }).optional(),
+  isActive: z.boolean(),
 });
 
 type LogoFormValues = z.infer<typeof logoSchema>;
@@ -38,6 +39,7 @@ export interface IWebsiteLogo {
   logoUrl: string;
   altText: string;
   mobileLogoUrl?: string;
+  authBackgroundUrl?: string;
   isActive: boolean;
 }
 
@@ -59,6 +61,7 @@ export function LogoForm({ initialData = [] }: LogoFormProps) {
     logoUrl: "",
     altText: "",
     mobileLogoUrl: "",
+    authBackgroundUrl: "",
     isActive: false,
   };
 
@@ -86,7 +89,7 @@ export function LogoForm({ initialData = [] }: LogoFormProps) {
           description: "Logo saved successfully",
           variant: "default",
         });
-        
+
         form.reset(defaultValues);
         refetch(); // Refresh logo data
       } else {
@@ -118,9 +121,9 @@ export function LogoForm({ initialData = [] }: LogoFormProps) {
           description: "Logo set as active successfully",
           variant: "default",
         });
-        
+
         refetch(); // Refresh logo data
-        
+
         // Update the active logo locally
         const updatedActiveLogo = initialData.find(logo => logo._id === id) || null;
         setActiveLogo(updatedActiveLogo);
@@ -141,7 +144,7 @@ export function LogoForm({ initialData = [] }: LogoFormProps) {
     if (!window.confirm("Are you sure you want to delete this logo?")) {
       return;
     }
-    
+
     try {
       const response = await fetch(`/api/admin/website/logo/${id}`, {
         method: "DELETE",
@@ -155,9 +158,9 @@ export function LogoForm({ initialData = [] }: LogoFormProps) {
           description: "Logo deleted successfully",
           variant: "default",
         });
-        
+
         refetch(); // Refresh logo data
-        
+
         // If the deleted logo was active, clear the active logo state
         if (activeLogo && activeLogo._id === id) {
           setActiveLogo(null);
@@ -181,7 +184,7 @@ export function LogoForm({ initialData = [] }: LogoFormProps) {
           <CardTitle>Add New Logo</CardTitle>
           <CardDescription>Upload a new logo for your website</CardDescription>
         </CardHeader>
-        
+
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)}>
             <CardContent className="space-y-4">
@@ -198,7 +201,7 @@ export function LogoForm({ initialData = [] }: LogoFormProps) {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="logoUrl"
@@ -212,7 +215,7 @@ export function LogoForm({ initialData = [] }: LogoFormProps) {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="altText"
@@ -226,7 +229,7 @@ export function LogoForm({ initialData = [] }: LogoFormProps) {
                   </FormItem>
                 )}
               />
-              
+
               <FormField
                 control={form.control}
                 name="mobileLogoUrl"
@@ -240,7 +243,21 @@ export function LogoForm({ initialData = [] }: LogoFormProps) {
                   </FormItem>
                 )}
               />
-              
+
+              <FormField
+                control={form.control}
+                name="authBackgroundUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Auth Page Background Image URL (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="https://example.com/auth-bg.png" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <FormField
                 control={form.control}
                 name="isActive"
@@ -262,7 +279,7 @@ export function LogoForm({ initialData = [] }: LogoFormProps) {
                 )}
               />
             </CardContent>
-            
+
             <CardFooter>
               <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting ? (
@@ -285,7 +302,7 @@ export function LogoForm({ initialData = [] }: LogoFormProps) {
             <CardTitle>Existing Logos</CardTitle>
             <CardDescription>Manage your existing website logos</CardDescription>
           </CardHeader>
-          
+
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2">
               {initialData.map((logo) => (
@@ -297,7 +314,7 @@ export function LogoForm({ initialData = [] }: LogoFormProps) {
                       className="max-h-full max-w-full object-contain"
                     />
                   </div>
-                  
+
                   <CardContent className="p-4">
                     <h3 className="font-semibold">{logo.name}</h3>
                     <p className="text-sm text-muted-foreground mt-2">{logo.altText}</p>
@@ -307,7 +324,7 @@ export function LogoForm({ initialData = [] }: LogoFormProps) {
                       </div>
                     )}
                   </CardContent>
-                  
+
                   <CardFooter className="flex justify-between p-4 pt-0">
                     {!logo.isActive && (
                       <Button

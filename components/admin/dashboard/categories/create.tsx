@@ -88,7 +88,7 @@ const CreateCategory = ({ setCategories }: { setCategories?: any }) => {
           />
           <SimpleGrid cols={4} spacing={"md"} mt={"md"}>
             {images.map((image, index) => (
-              <Box key={index}>
+              <Box key={index} pos="relative">
                 <Image
                   src={image}
                   alt={`Uploaded image ${index + 1}`}
@@ -96,6 +96,19 @@ const CreateCategory = ({ setCategories }: { setCategories?: any }) => {
                   height={"auto"}
                   fit="cover"
                 />
+                <Button
+                  color="red"
+                  size="xs"
+                  pos="absolute"
+                  top={5}
+                  right={5}
+                  onClick={() =>
+                    setImages((prev) => prev.filter((_, i) => i !== index))
+                  }
+                  style={{ padding: 0, width: 20, height: 20, borderRadius: 10 }}
+                >
+                  &times;
+                </Button>
               </Box>
             ))}
           </SimpleGrid>

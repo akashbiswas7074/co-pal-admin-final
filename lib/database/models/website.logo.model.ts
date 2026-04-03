@@ -7,6 +7,7 @@ export interface IWebsiteLogo {
   logoUrl: string;
   altText: string;
   mobileLogoUrl?: string;
+  authBackgroundUrl?: string;
   isActive: boolean;
   createdAt?: Date;
   updatedAt?: Date;
@@ -30,6 +31,9 @@ const WebsiteLogoSchema = new Schema<IWebsiteLogo>(
     mobileLogoUrl: {
       type: String,
     },
+    authBackgroundUrl: {
+      type: String,
+    },
     isActive: {
       type: Boolean,
       default: false,
@@ -43,13 +47,16 @@ const WebsiteLogoSchema = new Schema<IWebsiteLogo>(
 // Only one logo can be active at a time
 WebsiteLogoSchema.pre('save', async function (next) {
   if (this.isModified('isActive') && this.isActive) {
-    await this.constructor.updateMany(
+    await (this.constructor as mongoose.Model<IWebsiteLogo>).updateMany(
       { _id: { $ne: this._id } },
       { $set: { isActive: false } }
     );
   }
   next();
 });
+
+// Force refresh schema for Next.js dev server caching
+delete mongoose.models.WebsiteLogo;
 
 // Create and export the model
 const WebsiteLogo = mongoose.models.WebsiteLogo || mongoose.model<IWebsiteLogo>('WebsiteLogo', WebsiteLogoSchema);

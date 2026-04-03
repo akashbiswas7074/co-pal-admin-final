@@ -31,35 +31,40 @@ export const fetchActiveFooterConfig = async () => {
 export const createFooterConfig = async (footerData: IWebsiteFooter) => {
   try {
     await connectToDatabase();
-    
+
     // Validate required fields
-    if (!footerData.email || !footerData.phone || !footerData.address) {
+    if (!footerData.contactInfo?.email || !footerData.contactInfo?.phone || !footerData.contactInfo?.address) {
       return {
         success: false,
-        message: "Email, phone, and address are required fields",
+        message: "Email, phone, and address are required fields in contactInfo",
       };
     }
-    
+
     // Create new footer configuration
     const newFooterConfig = new WebsiteFooter({
-      email: footerData.email,
-      phone: footerData.phone,
-      address: footerData.address,
+      name: footerData.name,
+      contactInfo: {
+        email: footerData.contactInfo.email,
+        phone: footerData.contactInfo.phone,
+        address: footerData.contactInfo.address,
+      },
       isActive: footerData.isActive || false,
-      socialLinks: {
-        facebook: footerData.socialLinks?.facebook || "",
-        twitter: footerData.socialLinks?.twitter || "",
-        instagram: footerData.socialLinks?.instagram || "",
-        youtube: footerData.socialLinks?.youtube || "",
-        linkedin: footerData.socialLinks?.linkedin || "",
+      showFooterName: footerData.showFooterName !== undefined ? footerData.showFooterName : true,
+      socialMedia: {
+        facebook: footerData.socialMedia?.facebook || "",
+        twitter: footerData.socialMedia?.twitter || "",
+        instagram: footerData.socialMedia?.instagram || "",
+        youtube: footerData.socialMedia?.youtube || "",
+        linkedin: footerData.socialMedia?.linkedin || "",
       },
       companyLinks: footerData.companyLinks || [],
       shopLinks: footerData.shopLinks || [],
       helpLinks: footerData.helpLinks || [],
+      copyrightText: footerData.copyrightText,
     });
-    
+
     await newFooterConfig.save();
-    
+
     return {
       success: true,
       message: "Footer configuration created successfully",
@@ -78,37 +83,43 @@ export const createFooterConfig = async (footerData: IWebsiteFooter) => {
 export const updateFooterConfig = async (id: string, footerData: Partial<IWebsiteFooter>) => {
   try {
     await connectToDatabase();
-    
+
     const footerConfig = await WebsiteFooter.findById(id);
-    
+
     if (!footerConfig) {
       return {
         success: false,
         message: "Footer configuration not found",
       };
     }
-    
+
     // Update fields
-    if (footerData.email) footerConfig.email = footerData.email;
-    if (footerData.phone) footerConfig.phone = footerData.phone;
-    if (footerData.address) footerConfig.address = footerData.address;
-    if (footerData.isActive !== undefined) footerConfig.isActive = footerData.isActive;
-    
-    // Update social links
-    if (footerData.socialLinks) {
-      footerConfig.socialLinks = {
-        ...footerConfig.socialLinks,
-        ...footerData.socialLinks,
+    if (footerData.name) footerConfig.name = footerData.name;
+    if (footerData.copyrightText) footerConfig.copyrightText = footerData.copyrightText;
+    if (footerData.contactInfo) {
+      footerConfig.contactInfo = {
+        ...footerConfig.contactInfo,
+        ...footerData.contactInfo,
       };
     }
-    
+    if (footerData.isActive !== undefined) footerConfig.isActive = footerData.isActive;
+    if (footerData.showFooterName !== undefined) footerConfig.showFooterName = footerData.showFooterName;
+
+    // Update social media
+    if (footerData.socialMedia) {
+      footerConfig.socialMedia = {
+        ...footerConfig.socialMedia,
+        ...footerData.socialMedia,
+      };
+    }
+
     // Update link arrays
     if (footerData.companyLinks) footerConfig.companyLinks = footerData.companyLinks;
     if (footerData.shopLinks) footerConfig.shopLinks = footerData.shopLinks;
     if (footerData.helpLinks) footerConfig.helpLinks = footerData.helpLinks;
-    
+
     await footerConfig.save();
-    
+
     return {
       success: true,
       message: "Footer configuration updated successfully",
@@ -127,16 +138,16 @@ export const updateFooterConfig = async (id: string, footerData: Partial<IWebsit
 export const deleteFooterConfig = async (id: string) => {
   try {
     await connectToDatabase();
-    
+
     const result = await WebsiteFooter.findByIdAndDelete(id);
-    
+
     if (!result) {
       return {
         success: false,
         message: "Footer configuration not found",
       };
     }
-    
+
     return {
       success: true,
       message: "Footer configuration deleted successfully",
@@ -154,19 +165,19 @@ export const deleteFooterConfig = async (id: string) => {
 export const setFooterConfigActive = async (id: string) => {
   try {
     await connectToDatabase();
-    
+
     const footerConfig = await WebsiteFooter.findById(id);
-    
+
     if (!footerConfig) {
       return {
         success: false,
         message: "Footer configuration not found",
       };
     }
-    
+
     footerConfig.isActive = true;
     await footerConfig.save();
-    
+
     return {
       success: true,
       message: "Footer configuration set as active successfully",

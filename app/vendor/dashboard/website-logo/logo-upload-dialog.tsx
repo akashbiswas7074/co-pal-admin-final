@@ -21,13 +21,14 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, UploadCloud } from "lucide-react";
 import { IWebsiteLogo } from "@/lib/database/models/website.logo.model";
 import { createWebsiteLogo } from "@/lib/database/actions/website.logo.actions";
+import { convertToWebP } from "@/lib/image-utils";
 
 // Form schema for validation
 const formSchema = z.object({
   name: z.string().min(1, { message: "Name is required" }),
   logoUrl: z.string().url({ message: "Please enter a valid URL" }),
   altText: z.string().min(1, { message: "Alt text is required" }),
-  isActive: z.boolean().default(false),
+  isActive: z.boolean(),
   mobileLogoUrl: z.string().url({ message: "Please enter a valid URL" }).optional().or(z.literal('')),
 });
 
@@ -51,7 +52,7 @@ export default function LogoUploadDialog({
 
   // Initialize form
   const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(formSchema) as any,
     defaultValues: {
       name: "",
       logoUrl: "",
@@ -67,10 +68,19 @@ export default function LogoUploadDialog({
     if (!files || files.length === 0) return;
 
     const file = files[0];
-    
+
+    // Convert to WebP
+    let fileToUpload = file;
+    try {
+      const webpBlob = await convertToWebP(file);
+      fileToUpload = new File([webpBlob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
+    } catch (err) {
+      console.error('WebP conversion failed for logo:', err);
+    }
+
     // Create a FormData object to send the file
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', fileToUpload);
     formData.append('folder', 'logos');
 
     try {
@@ -81,7 +91,7 @@ export default function LogoUploadDialog({
       });
 
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.message || 'Failed to upload image');
       }
@@ -105,10 +115,19 @@ export default function LogoUploadDialog({
     if (!files || files.length === 0) return;
 
     const file = files[0];
-    
+
+    // Convert to WebP
+    let fileToUpload = file;
+    try {
+      const webpBlob = await convertToWebP(file);
+      fileToUpload = new File([webpBlob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
+    } catch (err) {
+      console.error('WebP conversion failed for mobile logo:', err);
+    }
+
     // Create a FormData object to send the file
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', fileToUpload);
     formData.append('folder', 'logos');
 
     try {
@@ -119,7 +138,7 @@ export default function LogoUploadDialog({
       });
 
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.message || 'Failed to upload image');
       }
@@ -140,7 +159,7 @@ export default function LogoUploadDialog({
   // Form submission handler
   const onSubmit = async (values: FormValues) => {
     setIsSubmitting(true);
-    
+
     try {
       const logoData: IWebsiteLogo = {
         name: values.name,
@@ -151,7 +170,7 @@ export default function LogoUploadDialog({
       };
 
       const result = await createWebsiteLogo(logoData);
-      
+
       if (result.success) {
         form.reset();
         setUploadedLogoUrl(null);
@@ -209,13 +228,13 @@ export default function LogoUploadDialog({
                   <FormControl>
                     <div className="space-y-4">
                       <div className="flex items-center gap-4">
-                        <Input 
+                        <Input
                           type="text"
-                          placeholder="Enter logo URL or upload" 
+                          placeholder="Enter logo URL or upload"
                           {...field}
                         />
                         <div className="relative">
-                          <Input 
+                          <Input
                             type="file"
                             className="absolute inset-0 opacity-0 cursor-pointer"
                             accept="image/*"
@@ -229,10 +248,10 @@ export default function LogoUploadDialog({
                       </div>
                       {uploadedLogoUrl && (
                         <div className="max-w-xs h-20 bg-muted rounded-md flex items-center justify-center">
-                          <img 
-                            src={uploadedLogoUrl} 
-                            alt="Uploaded logo preview" 
-                            className="max-h-full max-w-full p-2" 
+                          <img
+                            src={uploadedLogoUrl}
+                            alt="Uploaded logo preview"
+                            className="max-h-full max-w-full p-2"
                           />
                         </div>
                       )}
@@ -253,14 +272,14 @@ export default function LogoUploadDialog({
                   <FormControl>
                     <div className="space-y-4">
                       <div className="flex items-center gap-4">
-                        <Input 
+                        <Input
                           type="text"
-                          placeholder="Enter mobile logo URL or upload" 
+                          placeholder="Enter mobile logo URL or upload"
                           {...field}
                           value={field.value || ""}
                         />
                         <div className="relative">
-                          <Input 
+                          <Input
                             type="file"
                             className="absolute inset-0 opacity-0 cursor-pointer"
                             accept="image/*"
@@ -274,10 +293,10 @@ export default function LogoUploadDialog({
                       </div>
                       {uploadedMobileLogoUrl && (
                         <div className="max-w-xs h-20 bg-muted rounded-md flex items-center justify-center">
-                          <img 
-                            src={uploadedMobileLogoUrl} 
-                            alt="Uploaded mobile logo preview" 
-                            className="max-h-full max-w-full p-2" 
+                          <img
+                            src={uploadedMobileLogoUrl}
+                            alt="Uploaded mobile logo preview"
+                            className="max-h-full max-w-full p-2"
                           />
                         </div>
                       )}
@@ -331,7 +350,7 @@ export default function LogoUploadDialog({
               )}
             />
 
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-3 pt-4">
               <Button
                 type="button"
                 variant="outline"
@@ -344,10 +363,10 @@ export default function LogoUploadDialog({
                 {isSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Uploading...
+                    Saving...
                   </>
                 ) : (
-                  "Upload Logo"
+                  "Save Logos"
                 )}
               </Button>
             </div>

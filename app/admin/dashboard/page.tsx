@@ -128,7 +128,7 @@ const AdminDashboardPage = async () => {
                       {order?.user?.email}
                     </TableCell>
                     <TableCell className="whitespace-nowrap font-medium">
-                      ₹{order.total}
+                      ₹{Number(order.total).toFixed(2)}
                     </TableCell>
                     <TableCell>
                       {order.isPaid ? (

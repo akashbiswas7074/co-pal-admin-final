@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Upload, Image, X, Loader2 } from 'lucide-react';
+import { convertToWebP } from '@/lib/image-utils';
 
 interface ImageUploaderProps {
   onUploadComplete: (url: string) => void;
@@ -13,9 +14,9 @@ interface ImageUploaderProps {
   helpText?: string;
 }
 
-const ImageUploader: React.FC<ImageUploaderProps> = ({ 
-  onUploadComplete, 
-  existingImageUrl = '', 
+const ImageUploader: React.FC<ImageUploaderProps> = ({
+  onUploadComplete,
+  existingImageUrl = '',
   label,
   helpText
 }) => {
@@ -44,8 +45,18 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
     setUploadError(null);
 
     try {
+      // Convert image to WebP format
+      let fileToUpload = file;
+      try {
+        const webpBlob = await convertToWebP(file);
+        fileToUpload = new File([webpBlob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
+      } catch (webpError) {
+        console.error('WebP conversion failed, uploading original file:', webpError);
+        // Fallback to original file if conversion fails
+      }
+
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', fileToUpload);
       formData.append('upload_preset', 'website'); // Use a preset configured in Cloudinary
 
       // Upload the image to Cloudinary via our API
@@ -91,20 +102,20 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
   return (
     <div className="space-y-2">
       <Label htmlFor={`file-${label.replace(/\s+/g, '-').toLowerCase()}`}>{label}</Label>
-      
+
       <div className="flex flex-col gap-2">
         {imageUrl ? (
           <div className="relative">
             <div className="relative h-40 w-full border rounded-md overflow-hidden bg-gray-50">
-              <img 
-                src={imageUrl} 
-                alt={`Uploaded ${label}`} 
-                className="h-full w-full object-contain p-2" 
+              <img
+                src={imageUrl}
+                alt={`Uploaded ${label}`}
+                className="h-full w-full object-contain p-2"
               />
             </div>
-            <Button 
-              variant="destructive" 
-              size="icon" 
+            <Button
+              variant="destructive"
+              size="icon"
               className="absolute top-2 right-2 h-8 w-8 bg-red-600/90 hover:bg-red-700 text-white"
               onClick={handleRemoveImage}
             >
@@ -113,7 +124,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-40 border-2 border-dashed border-gray-300 rounded-md bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
-               onClick={() => fileInputRef.current?.click()}>
+            onClick={() => fileInputRef.current?.click()}>
             {isUploading ? (
               <div className="flex flex-col items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-gray-400 mb-2" />
@@ -130,7 +141,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
             )}
           </div>
         )}
-        
+
         <Input
           ref={fileInputRef}
           id={`file-${label.replace(/\s+/g, '-').toLowerCase()}`}
@@ -140,11 +151,11 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
           onChange={handleFileChange}
           disabled={isUploading}
         />
-        
+
         {uploadError && (
           <p className="text-sm text-red-500 mt-1">{uploadError}</p>
         )}
-        
+
         {helpText && (
           <p className="text-xs text-gray-500 mt-1">{helpText}</p>
         )}

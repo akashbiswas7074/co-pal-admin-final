@@ -40,7 +40,7 @@ export const verifyJwtToken = async (token: string): Promise<TokenPayload | null
 }
 
 export async function isAdminAuthenticated() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const adminToken = cookieStore.get("adminToken")?.value;
   
   if (!adminToken) {

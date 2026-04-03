@@ -37,7 +37,7 @@ const HeroAnalytics = mongoose.models.HeroAnalytics || mongoose.model('HeroAnaly
 // Authentication check
 async function checkAuthentication() {
   let isAuthenticated = false;
-  
+
   try {
     const session = await getServerSession(authOptions);
     if (session && session.user) {
@@ -46,7 +46,7 @@ async function checkAuthentication() {
   } catch (error) {
     console.log("NextAuth session check failed:", error);
   }
-  
+
   if (!isAuthenticated) {
     const cookieStore = cookies();
     const adminId = cookieStore.get('adminId')?.value;
@@ -54,34 +54,34 @@ async function checkAuthentication() {
       isAuthenticated = true;
     }
   }
-  
+
   if (!isAuthenticated && process.env.NODE_ENV !== 'production') {
     isAuthenticated = true;
   }
-  
+
   return isAuthenticated;
 }
 
 // Helper function to calculate performance score
 function calculatePerformanceScore(analytics: any): number {
   let score = 0;
-  
+
   // CTR contributes 40% to score
   const ctrScore = Math.min(analytics.clickThroughRate * 1000, 40); // Cap at 40 points
   score += ctrScore;
-  
+
   // Conversion rate contributes 35% to score
   const conversionScore = Math.min(analytics.conversionRate * 350, 35); // Cap at 35 points
   score += conversionScore;
-  
+
   // Time on section contributes 15% to score (ideal is 5+ seconds)
   const timeScore = Math.min((analytics.avgTimeOnSection / 5) * 15, 15);
   score += timeScore;
-  
+
   // Low bounce rate contributes 10% to score (lower is better)
   const bounceScore = Math.max(10 - (analytics.bounceRate * 10), 0);
   score += bounceScore;
-  
+
   return Math.round(score);
 }
 
@@ -93,7 +93,7 @@ function generateMockAnalytics(heroSectionId: string) {
   const conversionRate = Math.random() * 0.05 + 0.01; // 1-6% conversion rate
   const avgTimeOnSection = Math.random() * 8 + 2; // 2-10 seconds
   const bounceRate = Math.random() * 0.6 + 0.2; // 20-80% bounce rate
-  
+
   // Generate 7 days of metrics
   const dailyMetrics = [];
   for (let i = 6; i >= 0; i--) {
@@ -102,7 +102,7 @@ function generateMockAnalytics(heroSectionId: string) {
     const dayImpressions = Math.floor(baseImpressions / 7) + Math.floor(Math.random() * 200);
     const dayClicks = Math.floor(dayImpressions * clickThroughRate);
     const dayConversions = Math.floor(dayClicks * conversionRate);
-    
+
     dailyMetrics.push({
       date: date.toISOString().split('T')[0],
       impressions: dayImpressions,
@@ -110,7 +110,7 @@ function generateMockAnalytics(heroSectionId: string) {
       conversions: dayConversions
     });
   }
-  
+
   const analytics = {
     heroSectionId,
     impressions: baseImpressions,
@@ -136,7 +136,7 @@ function generateMockAnalytics(heroSectionId: string) {
       }
     ]
   };
-  
+
   analytics.performanceScore = calculatePerformanceScore(analytics);
   return analytics;
 }
@@ -150,23 +150,23 @@ export async function GET(request: NextRequest) {
     }
 
     await connectToDatabase();
-    
+
     // Get all hero sections
     const HeroSection = mongoose.models.HeroSection || mongoose.model('HeroSection', new mongoose.Schema({}, { strict: false }));
     const heroSections = await HeroSection.find({ isActive: true });
-    
+
     const analyticsData = [];
-    
+
     for (const section of heroSections) {
       let analytics = await HeroAnalytics.findOne({ heroSectionId: section._id });
-      
+
       // If no analytics exist, create mock data for demonstration
       if (!analytics) {
         const mockData = generateMockAnalytics(section._id.toString());
         analytics = new HeroAnalytics(mockData);
         await analytics.save();
       }
-      
+
       analyticsData.push({
         heroSectionId: section._id.toString(),
         impressions: analytics.impressions,
@@ -200,10 +200,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     await connectToDatabase();
-    
+
     const data = await request.json();
     const { heroSectionId, eventType, buttonText, buttonLink } = data;
-    
+
     if (!heroSectionId || !eventType) {
       return NextResponse.json(
         { success: false, message: "Hero section ID and event type are required" },
@@ -212,7 +212,7 @@ export async function POST(request: NextRequest) {
     }
 
     let analytics = await HeroAnalytics.findOne({ heroSectionId });
-    
+
     if (!analytics) {
       analytics = new HeroAnalytics({
         heroSectionId,
@@ -230,7 +230,7 @@ export async function POST(request: NextRequest) {
 
     const today = new Date().toISOString().split('T')[0];
     let todayMetrics = analytics.dailyMetrics.find(m => m.date === today);
-    
+
     if (!todayMetrics) {
       todayMetrics = { date: today, impressions: 0, clicks: 0, conversions: 0 };
       analytics.dailyMetrics.push(todayMetrics);
@@ -242,35 +242,35 @@ export async function POST(request: NextRequest) {
         analytics.impressions += 1;
         todayMetrics.impressions += 1;
         break;
-        
+
       case 'click':
         analytics.clicks += 1;
         todayMetrics.clicks += 1;
-        
+
         // Update button analytics
         if (buttonText && buttonLink) {
           let buttonAnalytic = analytics.buttonAnalytics.find(
             b => b.buttonText === buttonText && b.buttonLink === buttonLink
           );
-          
+
           if (!buttonAnalytic) {
             buttonAnalytic = { buttonText, buttonLink, clicks: 0, conversions: 0 };
             analytics.buttonAnalytics.push(buttonAnalytic);
           }
-          
+
           buttonAnalytic.clicks += 1;
         }
         break;
-        
+
       case 'conversion':
         todayMetrics.conversions += 1;
-        
+
         // Update button conversion
         if (buttonText && buttonLink) {
           let buttonAnalytic = analytics.buttonAnalytics.find(
             b => b.buttonText === buttonText && b.buttonLink === buttonLink
           );
-          
+
           if (buttonAnalytic) {
             buttonAnalytic.conversions += 1;
           }
@@ -280,20 +280,20 @@ export async function POST(request: NextRequest) {
 
     // Recalculate derived metrics
     analytics.clickThroughRate = analytics.impressions > 0 ? analytics.clicks / analytics.impressions : 0;
-    analytics.conversionRate = analytics.clicks > 0 ? 
+    analytics.conversionRate = analytics.clicks > 0 ?
       analytics.dailyMetrics.reduce((sum, m) => sum + m.conversions, 0) / analytics.clicks : 0;
-    
+
     // Find top performing button
     if (analytics.buttonAnalytics.length > 0) {
-      const topButton = analytics.buttonAnalytics.reduce((prev, current) => 
+      const topButton = analytics.buttonAnalytics.reduce((prev, current) =>
         (prev.clicks > current.clicks) ? prev : current
       );
       analytics.topPerformingButton = topButton.buttonText;
     }
-    
+
     // Recalculate performance score
     analytics.performanceScore = calculatePerformanceScore(analytics);
-    
+
     // Keep only last 7 days of metrics
     analytics.dailyMetrics = analytics.dailyMetrics
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())

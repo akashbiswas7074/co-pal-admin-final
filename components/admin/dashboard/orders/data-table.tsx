@@ -384,7 +384,8 @@ function Row(props: RowProps) { // Use defined RowProps
               <strong>Order Status:</strong> {row.orderStatus || row.status || "Not Processed"}
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>              <FormControl fullWidth size="small">
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <FormControl fullWidth size="small">
               <Select
                 value={row.orderStatus || row.status || "Not Processed"}
                 onChange={(e) => handleOrderStatusChange(e, row._id)}
@@ -609,7 +610,7 @@ function Row(props: RowProps) { // Use defined RowProps
               <Typography variant="h6" gutterBottom component="div">
                 Order items
               </Typography>
-              <Table size="small" aria-label="purchases">                <TableHead>
+              <Table size="small" aria-label="purchases"><TableHead>
                 <TableRow>
                   <TableCell></TableCell>
                   <TableCell>Name</TableCell>
@@ -1128,8 +1129,7 @@ export default function AllOrdersTable({
           >
             Orders
           </Typography>
-          <Table aria-label="collapsible table" className={styles.table}>
-            <TableHead>
+          <Table aria-label="collapsible table" className={styles.table}><TableHead>
               <TableRow>
                 <TableCell />
                 <TableCell>Order ID</TableCell>

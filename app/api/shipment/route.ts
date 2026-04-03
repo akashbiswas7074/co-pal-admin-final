@@ -1123,6 +1123,9 @@ export async function POST(request: NextRequest) {
         };
         updateData['orderItems.$[].status'] = 'Dispatched';
         updateData['orderItems.$[].waybillNumber'] = waybillNumbers[0];
+        updateData['products.$[].status'] = 'Dispatched';
+        updateData['products.$[].waybillNumber'] = waybillNumbers[0];
+
         break;
 
       case 'REVERSE':
@@ -1163,6 +1166,9 @@ export async function POST(request: NextRequest) {
         };
         updateData['orderItems.$[].status'] = 'Dispatched';
         updateData['orderItems.$[].waybillNumber'] = waybillNumbers[0];
+        updateData['products.$[].status'] = 'Dispatched';
+        updateData['products.$[].waybillNumber'] = waybillNumbers[0];
+
         break;
     }
 

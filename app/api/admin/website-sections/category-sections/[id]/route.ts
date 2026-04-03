@@ -17,7 +17,7 @@ interface Params {
 // Utility function for authentication check
 async function checkAuthentication() {
   let isAuthenticated = false;
-  
+
   // Method 1: Check using NextAuth session
   try {
     const session = await getServerSession(authOptions);
@@ -27,23 +27,23 @@ async function checkAuthentication() {
   } catch (error) {
     console.log("NextAuth session check failed:", error);
   }
-  
+
   // Method 2: Check for adminId cookie
   if (!isAuthenticated) {
     const cookieStore = cookies();
     const adminId = cookieStore.get('adminId')?.value;
-    
+
     if (adminId) {
       isAuthenticated = true;
     }
   }
-  
+
   // In development, we'll allow access even if not authenticated
   if (!isAuthenticated && process.env.NODE_ENV !== 'production') {
     console.log("Authentication bypassed in development mode");
     isAuthenticated = true;
   }
-  
+
   return isAuthenticated;
 }
 
@@ -52,12 +52,12 @@ async function ensureDatabaseConnection() {
   try {
     await connectToDatabase();
     console.log("Database connection established successfully");
-    
+
     // Check if model is properly initialized
     if (!mongoose.models.CategorySection) {
       throw new Error("CategorySection model is not properly initialized");
     }
-    
+
     return true;
   } catch (error) {
     console.error("Database connection or model error:", error);
@@ -76,14 +76,14 @@ export async function GET(request: Request, { params }: Params) {
         { status: 500 }
       );
     }
-    
+
     // Find the category section with explicit error handling
     let section;
     try {
       section = await CategorySection.findById(params.id)
         .populate('categoryId', 'name')
         .lean();
-      
+
       if (!section) {
         return NextResponse.json(
           { success: false, message: 'Category section not found' },
@@ -97,7 +97,7 @@ export async function GET(request: Request, { params }: Params) {
         { status: 500 }
       );
     }
-    
+
     // Handle case where categoryId might not be populated correctly
     let processedSection;
     if (section.categoryId && typeof section.categoryId === 'object' && section.categoryId._id) {
@@ -112,7 +112,7 @@ export async function GET(request: Request, { params }: Params) {
         category: { _id: section.categoryId, name: 'Unknown Category' },
       };
     }
-    
+
     return NextResponse.json({
       success: true,
       section: JSON.parse(JSON.stringify(processedSection))
@@ -130,7 +130,7 @@ export async function GET(request: Request, { params }: Params) {
 export async function PATCH(request: Request, { params }: Params) {
   try {
     const isAuthenticated = await checkAuthentication();
-    
+
     // For production, require authentication
     if (!isAuthenticated && process.env.NODE_ENV === 'production') {
       return NextResponse.json(
@@ -138,7 +138,7 @@ export async function PATCH(request: Request, { params }: Params) {
         { status: 401 }
       );
     }
-    
+
     // Connect to database
     const dbConnected = await ensureDatabaseConnection();
     if (!dbConnected) {
@@ -147,9 +147,9 @@ export async function PATCH(request: Request, { params }: Params) {
         { status: 500 }
       );
     }
-    
+
     const data = await request.json();
-    
+
     // Find and update the category section with explicit error handling
     let updatedSection;
     try {
@@ -164,7 +164,7 @@ export async function PATCH(request: Request, { params }: Params) {
         },
         { new: true } // Return the updated document
       ).populate('categoryId', 'name');
-      
+
       if (!updatedSection) {
         return NextResponse.json(
           { success: false, message: 'Category section not found' },
@@ -178,7 +178,7 @@ export async function PATCH(request: Request, { params }: Params) {
         { status: 500 }
       );
     }
-    
+
     // Handle case where categoryId might not be populated correctly
     let processedSection;
     if (updatedSection.categoryId && typeof updatedSection.categoryId === 'object') {
@@ -193,7 +193,7 @@ export async function PATCH(request: Request, { params }: Params) {
         category: { _id: updatedSection.categoryId, name: 'Unknown Category' },
       };
     }
-    
+
     return NextResponse.json({
       success: true,
       message: 'Category section updated successfully',
@@ -212,7 +212,7 @@ export async function PATCH(request: Request, { params }: Params) {
 export async function DELETE(request: Request, { params }: Params) {
   try {
     const isAuthenticated = await checkAuthentication();
-    
+
     // For production, require authentication
     if (!isAuthenticated && process.env.NODE_ENV === 'production') {
       return NextResponse.json(
@@ -220,7 +220,7 @@ export async function DELETE(request: Request, { params }: Params) {
         { status: 401 }
       );
     }
-    
+
     // Connect to database
     const dbConnected = await ensureDatabaseConnection();
     if (!dbConnected) {
@@ -229,12 +229,12 @@ export async function DELETE(request: Request, { params }: Params) {
         { status: 500 }
       );
     }
-    
+
     // Delete the category section with explicit error handling
     let deletedSection;
     try {
       deletedSection = await CategorySection.findByIdAndDelete(params.id);
-      
+
       if (!deletedSection) {
         return NextResponse.json(
           { success: false, message: 'Category section not found' },
@@ -248,7 +248,7 @@ export async function DELETE(request: Request, { params }: Params) {
         { status: 500 }
       );
     }
-    
+
     return NextResponse.json({
       success: true,
       message: 'Category section deleted successfully',

@@ -12,6 +12,7 @@ export async function createWebsiteLogo(logoData: {
   altText: string;
   isActive?: boolean;
   mobileLogoUrl?: string;
+  authBackgroundUrl?: string;
 }) {
   try {
     await connectToDatabase();
@@ -99,6 +100,7 @@ export async function updateWebsiteLogo(
     altText?: string;
     isActive?: boolean;
     mobileLogoUrl?: string;
+    authBackgroundUrl?: string;
   }
 ) {
   try {

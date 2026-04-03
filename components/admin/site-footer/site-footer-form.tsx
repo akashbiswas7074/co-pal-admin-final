@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useWebsiteFooter } from "@/hooks/use-website-footer";
-import { IWebsiteFooter } from "@/lib/database/models/website.footer.model"; 
+import { IWebsiteFooter } from "@/lib/database/models/website.footer.model";
 import { AlertCircle, CheckCircle, Loader2, Plus, Trash2 } from "lucide-react";
 
 import {
@@ -62,6 +62,7 @@ const footerSchema = z.object({
   helpLinks: z.array(linkItemSchema).optional(),
   copyrightText: z.string().min(1, { message: "Copyright text is required" }),
   isActive: z.boolean().default(false),
+  showFooterName: z.boolean().default(true),
 });
 
 type FooterFormValues = z.infer<typeof footerSchema>;
@@ -77,98 +78,100 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [selectedFooterId, setSelectedFooterId] = useState<string | null>(null);
-  
+
   // Set default company links
   const defaultCompanyLinks = [
     { title: "About Us", url: "/about" },
     { title: "Contact Us", url: "/contact" }
   ];
-  
+
   // Set default shop links
   const defaultShopLinks = [
     { title: "All Products", url: "/shop" },
     { title: "New Arrivals", url: "/shop/new-arrivals" }
   ];
-  
+
   // Set default help links
   const defaultHelpLinks = [
     { title: "FAQs", url: "/faqs" },
     { title: "Shipping", url: "/shipping" }
   ];
-  
+
   const [companyLinks, setCompanyLinks] = useState<{ title: string; url: string }[]>(
-    initialData.length > 0 && initialData[0]?.companyLinks?.length 
-      ? [...initialData[0].companyLinks] 
+    initialData.length > 0 && initialData[0]?.companyLinks?.length
+      ? [...initialData[0].companyLinks]
       : [...defaultCompanyLinks]
   );
-  
+
   const [shopLinks, setShopLinks] = useState<{ title: string; url: string }[]>(
-    initialData.length > 0 && initialData[0]?.shopLinks?.length 
-      ? [...initialData[0].shopLinks] 
+    initialData.length > 0 && initialData[0]?.shopLinks?.length
+      ? [...initialData[0].shopLinks]
       : [...defaultShopLinks]
   );
-  
+
   const [helpLinks, setHelpLinks] = useState<{ title: string; url: string }[]>(
-    initialData.length > 0 && initialData[0]?.helpLinks?.length 
-      ? [...initialData[0].helpLinks] 
+    initialData.length > 0 && initialData[0]?.helpLinks?.length
+      ? [...initialData[0].helpLinks]
       : [...defaultHelpLinks]
   );
 
   // Set default values based on first item in initialData or use empty defaults
-  const defaultValues: FooterFormValues = initialData.length > 0 
+  const defaultValues: FooterFormValues = initialData.length > 0
     ? {
-        name: initialData[0]?.name || "Main Footer",
-        contactInfo: {
-          email: initialData[0]?.contactInfo?.email || "contact@example.com",
-          phone: initialData[0]?.contactInfo?.phone || "+1 (123) 456-7890",
-          address: initialData[0]?.contactInfo?.address || "123 Street Name, City, State, ZIP",
-        },
-        socialMedia: {
-          facebook: initialData[0]?.socialMedia?.facebook || "",
-          twitter: initialData[0]?.socialMedia?.twitter || "",
-          instagram: initialData[0]?.socialMedia?.instagram || "",
-          youtube: initialData[0]?.socialMedia?.youtube || "",
-          linkedin: initialData[0]?.socialMedia?.linkedin || "",
-        },
-        companyLinks: initialData[0]?.companyLinks || defaultCompanyLinks,
-        shopLinks: initialData[0]?.shopLinks || defaultShopLinks,
-        helpLinks: initialData[0]?.helpLinks || defaultHelpLinks,
-        copyrightText: initialData[0]?.copyrightText || `© ${new Date().getFullYear()} Your Company. All rights reserved.`,
-        isActive: initialData[0]?.isActive || false,
-      }
+      name: initialData[0]?.name || "Main Footer",
+      contactInfo: {
+        email: initialData[0]?.contactInfo?.email || "contact@example.com",
+        phone: initialData[0]?.contactInfo?.phone || "+1 (123) 456-7890",
+        address: initialData[0]?.contactInfo?.address || "123 Street Name, City, State, ZIP",
+      },
+      socialMedia: {
+        facebook: initialData[0]?.socialMedia?.facebook || "",
+        twitter: initialData[0]?.socialMedia?.twitter || "",
+        instagram: initialData[0]?.socialMedia?.instagram || "",
+        youtube: initialData[0]?.socialMedia?.youtube || "",
+        linkedin: initialData[0]?.socialMedia?.linkedin || "",
+      },
+      companyLinks: initialData[0]?.companyLinks || defaultCompanyLinks,
+      shopLinks: initialData[0]?.shopLinks || defaultShopLinks,
+      helpLinks: initialData[0]?.helpLinks || defaultHelpLinks,
+      copyrightText: initialData[0]?.copyrightText || `© ${new Date().getFullYear()} Your Company. All rights reserved.`,
+      isActive: initialData[0]?.isActive || false,
+      showFooterName: initialData[0]?.showFooterName !== undefined ? initialData[0].showFooterName : true,
+    }
     : {
-        name: "Main Footer",
-        contactInfo: {
-          email: "contact@example.com",
-          phone: "+1 (123) 456-7890",
-          address: "123 Street Name, City, State, ZIP",
-        },
-        socialMedia: {
-          facebook: "",
-          twitter: "",
-          instagram: "",
-          youtube: "",
-          linkedin: "",
-        },
-        companyLinks: defaultCompanyLinks,
-        shopLinks: defaultShopLinks,
-        helpLinks: defaultHelpLinks,
-        copyrightText: `© ${new Date().getFullYear()} Your Company. All rights reserved.`,
-        isActive: true, // First footer will be active by default
-      };
+      name: "Main Footer",
+      contactInfo: {
+        email: "contact@example.com",
+        phone: "+1 (123) 456-7890",
+        address: "123 Street Name, City, State, ZIP",
+      },
+      socialMedia: {
+        facebook: "",
+        twitter: "",
+        instagram: "",
+        youtube: "",
+        linkedin: "",
+      },
+      companyLinks: defaultCompanyLinks,
+      shopLinks: defaultShopLinks,
+      helpLinks: defaultHelpLinks,
+      copyrightText: `© ${new Date().getFullYear()} Your Company. All rights reserved.`,
+      isActive: true, // First footer will be active by default
+      showFooterName: true,
+    };
 
   // Create form with the default values
   const form = useForm<FooterFormValues>({
     resolver: zodResolver(footerSchema),
     defaultValues,
   });
-  
+
   // Set form values when initialData changes
   useEffect(() => {
     if (initialData.length > 0) {
       const activeFooter = initialData.find(footer => footer.isActive) || initialData[0];
       setSelectedFooterId(activeFooter?._id || null);
-      
+
       form.reset({
         name: activeFooter?.name || defaultValues.name,
         contactInfo: {
@@ -185,17 +188,18 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
         },
         copyrightText: activeFooter?.copyrightText || defaultValues.copyrightText,
         isActive: activeFooter?.isActive || defaultValues.isActive,
+        showFooterName: activeFooter?.showFooterName !== undefined ? activeFooter.showFooterName : true,
       });
-      
+
       // Update link arrays if they exist
       if (activeFooter?.companyLinks?.length) {
         setCompanyLinks([...activeFooter.companyLinks]);
       }
-      
+
       if (activeFooter?.shopLinks?.length) {
         setShopLinks([...activeFooter.shopLinks]);
       }
-      
+
       if (activeFooter?.helpLinks?.length) {
         setHelpLinks([...activeFooter.helpLinks]);
       }
@@ -207,7 +211,7 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
     const selectedFooter = initialData.find(footer => footer._id === footerId);
     if (selectedFooter) {
       setSelectedFooterId(footerId);
-      
+
       form.reset({
         name: selectedFooter?.name || "",
         contactInfo: {
@@ -224,21 +228,22 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
         },
         copyrightText: selectedFooter?.copyrightText || "",
         isActive: selectedFooter?.isActive || false,
+        showFooterName: selectedFooter?.showFooterName !== undefined ? selectedFooter.showFooterName : true,
       });
-      
+
       // Update link arrays
       if (selectedFooter?.companyLinks?.length) {
         setCompanyLinks([...selectedFooter.companyLinks]);
       } else {
         setCompanyLinks([...defaultCompanyLinks]);
       }
-      
+
       if (selectedFooter?.shopLinks?.length) {
         setShopLinks([...selectedFooter.shopLinks]);
       } else {
         setShopLinks([...defaultShopLinks]);
       }
-      
+
       if (selectedFooter?.helpLinks?.length) {
         setHelpLinks([...selectedFooter.helpLinks]);
       } else {
@@ -263,9 +268,9 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
           description: "Footer configuration deleted successfully",
           variant: "default",
         });
-        
+
         refetch(); // Refresh footer data
-        
+
         // Reload the page to see the updated data
         window.location.reload();
       } else {
@@ -286,7 +291,7 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
   // Create new footer configuration
   const createNewFooter = () => {
     setSelectedFooterId(null);
-    
+
     form.reset({
       name: "Main Footer",
       contactInfo: {
@@ -303,8 +308,9 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
       },
       copyrightText: `© ${new Date().getFullYear()} Your Company. All rights reserved.`,
       isActive: false,
+      showFooterName: true,
     });
-    
+
     setCompanyLinks([...defaultCompanyLinks]);
     setShopLinks([...defaultShopLinks]);
     setHelpLinks([...defaultHelpLinks]);
@@ -338,9 +344,9 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
           description: "Footer configuration saved successfully",
           variant: "default",
         });
-        
+
         refetch(); // Refresh footer data
-        
+
         // Reload the page to see the updated data
         window.location.reload();
       } else {
@@ -361,43 +367,43 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
   const addCompanyLink = () => {
     setCompanyLinks([...companyLinks, { title: "", url: "" }]);
   };
-  
+
   const updateCompanyLink = (index: number, field: 'title' | 'url', value: string) => {
     const updatedLinks = [...companyLinks];
     updatedLinks[index] = { ...updatedLinks[index], [field]: value };
     setCompanyLinks(updatedLinks);
   };
-  
+
   const removeCompanyLink = (index: number) => {
     setCompanyLinks(companyLinks.filter((_, i) => i !== index));
   };
-  
+
   // Link management functions for shop links
   const addShopLink = () => {
     setShopLinks([...shopLinks, { title: "", url: "" }]);
   };
-  
+
   const updateShopLink = (index: number, field: 'title' | 'url', value: string) => {
     const updatedLinks = [...shopLinks];
     updatedLinks[index] = { ...updatedLinks[index], [field]: value };
     setShopLinks(updatedLinks);
   };
-  
+
   const removeShopLink = (index: number) => {
     setShopLinks(shopLinks.filter((_, i) => i !== index));
   };
-  
+
   // Link management functions for help links
   const addHelpLink = () => {
     setHelpLinks([...helpLinks, { title: "", url: "" }]);
   };
-  
+
   const updateHelpLink = (index: number, field: 'title' | 'url', value: string) => {
     const updatedLinks = [...helpLinks];
     updatedLinks[index] = { ...updatedLinks[index], [field]: value };
     setHelpLinks(updatedLinks);
   };
-  
+
   const removeHelpLink = (index: number) => {
     setHelpLinks(helpLinks.filter((_, i) => i !== index));
   };
@@ -421,14 +427,13 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
                 New Footer
               </Button>
             </div>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {initialData.map((footer) => (
-                <div 
-                  key={footer._id} 
-                  className={`p-4 border rounded-lg ${
-                    selectedFooterId === footer._id ? 'border-primary bg-primary/5' : 'border-gray-200'
-                  } cursor-pointer relative`}
+                <div
+                  key={footer._id}
+                  className={`p-4 border rounded-lg ${selectedFooterId === footer._id ? 'border-primary bg-primary/5' : 'border-gray-200'
+                    } cursor-pointer relative`}
                   onClick={() => selectFooter(footer._id)}
                 >
                   <div className="flex justify-between items-start">
@@ -446,9 +451,9 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
 
                       <AlertDialog>
                         <AlertDialogTrigger asChild onClick={(e) => e.stopPropagation()}>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="h-8 w-8 text-destructive hover:text-destructive/90"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -469,7 +474,7 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction 
+                            <AlertDialogAction
                               onClick={() => deleteFooter(footer._id)}
                               disabled={isDeleting}
                               className="bg-red-600 hover:bg-red-700"
@@ -489,7 +494,7 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
                   </div>
                 </div>
               ))}
-              
+
               {initialData.length === 0 && (
                 <div className="col-span-2 p-8 text-center border border-dashed rounded-lg">
                   <p className="text-gray-500">No footer configurations found. Create your first one.</p>
@@ -507,8 +512,8 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
             {selectedFooterId ? "Edit Footer Configuration" : "Create New Footer"}
           </CardTitle>
           <CardDescription>
-            {selectedFooterId 
-              ? "Update your selected footer configuration" 
+            {selectedFooterId
+              ? "Update your selected footer configuration"
               : "Create a new footer configuration for your website"}
           </CardDescription>
         </CardHeader>
@@ -576,6 +581,26 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
                       </FormItem>
                     )}
                   />
+                  <FormField
+                    control={form.control}
+                    name="showFooterName"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                        <div className="space-y-0.5">
+                          <FormLabel>Show Footer Name</FormLabel>
+                          <CardDescription>
+                            Show or hide the footer name/company name on the website
+                          </CardDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
                 </TabsContent>
 
                 {/* Contact Info Tab */}
@@ -615,9 +640,9 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
                       <FormItem>
                         <FormLabel>Address</FormLabel>
                         <FormControl>
-                          <Textarea 
-                            placeholder="123 Street Name, City, State, ZIP" 
-                            {...field} 
+                          <Textarea
+                            placeholder="123 Street Name, City, State, ZIP"
+                            {...field}
                           />
                         </FormControl>
                         <FormMessage />
@@ -705,17 +730,17 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="text-lg font-medium">Company Links</h3>
-                      <Button 
-                        type="button" 
-                        size="sm" 
-                        variant="outline" 
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
                         onClick={addCompanyLink}
                       >
                         <Plus className="h-4 w-4 mr-2" />
                         Add Link
                       </Button>
                     </div>
-                    
+
                     {companyLinks.map((link, index) => (
                       <div key={index} className="flex items-center gap-2">
                         <div className="flex-1">
@@ -748,17 +773,17 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="text-lg font-medium">Shop Links</h3>
-                      <Button 
+                      <Button
                         type="button"
-                        size="sm" 
-                        variant="outline" 
+                        size="sm"
+                        variant="outline"
                         onClick={addShopLink}
                       >
                         <Plus className="h-4 w-4 mr-2" />
                         Add Link
                       </Button>
                     </div>
-                    
+
                     {shopLinks.map((link, index) => (
                       <div key={index} className="flex items-center gap-2">
                         <div className="flex-1">
@@ -791,17 +816,17 @@ export function SiteFooterForm({ initialData = [] }: SiteFooterFormProps) {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <h3 className="text-lg font-medium">Help Links</h3>
-                      <Button 
-                        type="button" 
-                        size="sm" 
-                        variant="outline" 
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
                         onClick={addHelpLink}
                       >
                         <Plus className="h-4 w-4 mr-2" />
                         Add Link
                       </Button>
                     </div>
-                    
+
                     {helpLinks.map((link, index) => (
                       <div key={index} className="flex items-center gap-2">
                         <div className="flex-1">

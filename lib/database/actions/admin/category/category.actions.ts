@@ -90,22 +90,72 @@ export const deleteCategory = async (id: string) => {
 };
 
 // update category for admin
-export const updateCategory = async (id: string, name: string) => {
+// update category for admin
+export const updateCategory = async (
+  id: string,
+  name: string,
+  images: any[]
+) => {
   try {
     await connectToDatabase();
-    const category = await Category.findByIdAndUpdate(id, {
-      name,
-      slug: slugify(name),
-    });
-    if (!category) {
+    const existingCategory = await Category.findById(id);
+    if (!existingCategory) {
       return {
         message: "Category not found with this Id!",
         success: false,
       };
     }
+
+    // Handle Image Updates
+    const existingImages = existingCategory.images || [];
+
+    // 1. Identify images to remove (those in existing but not in new)
+    const imagesToKeep = images.filter((img: any) => img.public_id);
+    const imagesToRemove = existingImages.filter(
+      (exImg: any) =>
+        !imagesToKeep.some((keepImg: any) => keepImg.public_id === exImg.public_id)
+    );
+
+    // 2. Delete removed images from Cloudinary
+    const deletePromises = imagesToRemove.map((img: any) =>
+      cloudinary.v2.uploader.destroy(img.public_id)
+    );
+    await Promise.all(deletePromises);
+
+    // 3. Upload new images (base64 strings)
+    const newBase64Images = images.filter((img: any) => typeof img === "string");
+    const uploadPromises = newBase64Images.map(async (base64Image: string) => {
+      const buffer = base64ToBuffer(base64Image);
+      const formData = new FormData();
+      formData.append("file", new Blob([buffer], { type: "image/jpeg" }));
+      formData.append("upload_preset", "website");
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_NAME}/image/upload`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+      const resData = await response.json();
+      return {
+        url: resData.secure_url,
+        public_id: resData.public_id,
+      };
+    });
+    const uploadedImages = await Promise.all(uploadPromises);
+
+    // 4. Combine kept and new images
+    const updatedImagesList = [...imagesToKeep, ...uploadedImages];
+
+    const category = await Category.findByIdAndUpdate(id, {
+      name,
+      slug: slugify(name),
+      images: updatedImagesList,
+    });
+
     const categories = await Category.find().sort({ updatedAt: -1 });
     return {
-      message: "Successfully updated product!",
+      message: "Successfully updated category!",
       success: true,
 
       categories: JSON.parse(JSON.stringify(categories)),

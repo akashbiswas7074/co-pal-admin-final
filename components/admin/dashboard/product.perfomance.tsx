@@ -55,9 +55,9 @@ const ProductData = () => {
       } else if (width < 1024) { // tablet
         return { width: 400, height: 400, radius: 120, legendPosition: "right" };
       }
-      return { width: 500, height: 400, radius: 150, legendPosition: "right" }; // desktop
+      return { width: "100%", height: 350, radius: 100, legendPosition: "bottom" }; // desktop
     }
-    return { width: 500, height: 400, radius: 150, legendPosition: "right" }; // default
+    return { width: "100%", height: 350, radius: 100, legendPosition: "bottom" }; // default
   };
 
   const [dimensions, setDimensions] = useState(getChartDimensions());
@@ -104,7 +104,7 @@ const ProductData = () => {
                     ))}
                   </Pie>
                   <Tooltip />
-                  <Legend layout={dimensions.legendPosition === "bottom" ? "horizontal" : "vertical"} />
+                  <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ paddingTop: '20px' }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
@@ -140,7 +140,7 @@ const ProductData = () => {
                     ))}
                   </Pie>
                   <Tooltip />
-                  <Legend layout={dimensions.legendPosition === "bottom" ? "horizontal" : "vertical"} />
+                  <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ paddingTop: '20px' }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (

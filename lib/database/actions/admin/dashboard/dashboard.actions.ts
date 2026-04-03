@@ -115,13 +115,13 @@ export const calculateTotalOrders = async () => {
         lastMonthSales = lastMonthSales + order.total;
       }
     });
-    const growthPercentage = (todaySales / (totalSales - todaySales)) * 100;
+    const growthPercentage = totalSales - todaySales !== 0 ? (todaySales / (totalSales - todaySales)) * 100 : 0;
     return {
-      todaySales,
-      totalSales,
-      lastMonthSales,
-      lastWeekSales,
-      growthPercentage: growthPercentage.toFixed(2),
+      todaySales: Number(todaySales.toFixed(2)),
+      totalSales: Number(totalSales.toFixed(2)),
+      lastMonthSales: Number(lastMonthSales.toFixed(2)),
+      lastWeekSales: Number(lastWeekSales.toFixed(2)),
+      growthPercentage: isFinite(growthPercentage) ? growthPercentage.toFixed(2) : "0.00",
     };
   } catch (error: any) {
     console.log(error);

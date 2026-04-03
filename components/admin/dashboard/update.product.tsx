@@ -23,6 +23,7 @@ import {
   getParentsandCategories,
   updateProduct,
 } from "@/lib/database/actions/admin/products/products.actions";
+import { getSamplesByProductId } from "@/lib/database/actions/sample.actions";
 
 interface FormValues {
   name: string;
@@ -39,6 +40,8 @@ interface FormValues {
   ingredients: { name: string }[];
   questions: { question: string; answer: string }[];
   details: { name: string; value: string }[];
+  sample5mlPrice: number;
+  sample10mlPrice: number;
 }
 
 const UpdateProductComponent: React.FC<{ data: any; setOpen: any }> = ({
@@ -73,6 +76,8 @@ const UpdateProductComponent: React.FC<{ data: any; setOpen: any }> = ({
       questions: [{ question: "", answer: "" }],
       shippingFee: "",
       details: [{ name: "", value: "" }],
+      sample5mlPrice: 0,
+      sample10mlPrice: 0,
     },
     validate: {
       name: hasLength({ min: 10, max: 100 }, "Must be at least 10 characters"),
@@ -120,9 +125,22 @@ const UpdateProductComponent: React.FC<{ data: any; setOpen: any }> = ({
         shippingFee: data.shippingFee || "",
         details: data.details || [{ name: "", value: "" }],
       });
+
+      // Fetch sample prices
+      const fetchSamples = async () => {
+        const samplesData = await getSamplesByProductId(productId as string);
+        if (samplesData && samplesData.length > 0) {
+          const sample5ml = samplesData.find((s: any) => s.variant === "5ml");
+          const sample10ml = samplesData.find((s: any) => s.variant === "10ml");
+          
+          form.setFieldValue("sample5mlPrice", sample5ml?.price || 0);
+          form.setFieldValue("sample10mlPrice", sample10ml?.price || 0);
+        }
+      };
+      fetchSamples();
     }
     console.log(data);
-  }, [dataLoaded, data]);
+  }, [dataLoaded, data, productId]);
 
   const handleSubmit = async (values: FormValues) => {
     setLoading(true);
@@ -153,12 +171,25 @@ const UpdateProductComponent: React.FC<{ data: any; setOpen: any }> = ({
           productDetails.discount,
           productDetails.name,
           productDetails.description,
-          productDetails.brand,
+          values.longDescription,
           productDetails.details,
           productDetails.questions,
           productDetails.benefits,
           productDetails.ingredients,
-          values.longDescription
+          undefined, // images
+          undefined, // category
+          undefined, // subCategories
+          undefined, // featured
+          undefined, // shippingFee
+          undefined, // shortDescription
+          undefined, // price
+          undefined, // qty
+          undefined, // stock
+          undefined, // tagValues
+          undefined, // shippingDimensions
+          values.brand,
+          values.sample5mlPrice,
+          values.sample10mlPrice
         ).then((res) => {
           if (res?.success) {
             setLoading(false);
@@ -245,6 +276,19 @@ const UpdateProductComponent: React.FC<{ data: any; setOpen: any }> = ({
                 {...form.getInputProps("discount")}
               />
             </Box>
+
+            <Group grow mb="md">
+              <NumberInput
+                label="5ml Sample Price (₹)"
+                placeholder="60"
+                {...form.getInputProps("sample5mlPrice")}
+              />
+              <NumberInput
+                label="10ml Sample Price (₹)"
+                placeholder="100"
+                {...form.getInputProps("sample10mlPrice")}
+              />
+            </Group>
 
             <Box mb="md">
               <JoditEditor

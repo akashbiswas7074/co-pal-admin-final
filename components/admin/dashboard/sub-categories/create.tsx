@@ -50,7 +50,7 @@ const CreateSubCategory = ({
   const [tags, setTags] = useState<TagFormData[]>([]);
   const [existingTags, setExistingTags] = useState<any[]>([]);
   const [editingTagIndex, setEditingTagIndex] = useState<number | null>(null);
-  
+
   const form = useForm({
     initialValues: {
       name: "",
@@ -63,14 +63,14 @@ const CreateSubCategory = ({
           : null,
     },
   });
-  
+
   const tagForm = useForm({
     initialValues: {
       tagName: "",
       isMandatory: false,
     },
   });
-  
+
   const addTag = () => {
     if (tagForm.values.tagName.trim()) {
       if (editingTagIndex !== null) {
@@ -95,7 +95,7 @@ const CreateSubCategory = ({
       tagForm.reset();
     }
   };
-  
+
   const editTag = (index: number) => {
     const tag = tags[index];
     tagForm.setValues({
@@ -104,12 +104,12 @@ const CreateSubCategory = ({
     });
     setEditingTagIndex(index);
   };
-  
+
   const cancelEdit = () => {
     setEditingTagIndex(null);
     tagForm.reset();
   };
-  
+
   const removeTag = (index: number) => {
     setTags(tags.filter((_, i) => i !== index));
     if (editingTagIndex === index) {
@@ -120,7 +120,7 @@ const CreateSubCategory = ({
       setEditingTagIndex(editingTagIndex - 1);
     }
   };
-  
+
   // Fetch existing tags from parent category when parent is selected
   useEffect(() => {
     const fetchExistingTags = async () => {
@@ -140,7 +140,7 @@ const CreateSubCategory = ({
         setExistingTags([]);
       }
     };
-    
+
     fetchExistingTags();
   }, [form.values.parent]);
   const handleImageChange = async (files: File[]) => {
@@ -151,7 +151,7 @@ const CreateSubCategory = ({
     console.log("Submit handler called with values:", values);
     console.log("Images:", images.length);
     console.log("Tags:", tags.length);
-    
+
     try {
       // Validate required fields
       if (!values.name || values.name.trim().length < 3) {
@@ -159,29 +159,29 @@ const CreateSubCategory = ({
         setLoading(false);
         return;
       }
-      
+
       if (!values.parent) {
         alert("Please select a parent category.");
         setLoading(false);
         return;
       }
-      
+
       if (images.length === 0) {
         alert("Please upload at least one image.");
         setLoading(false);
         return;
       }
-      
+
       setLoading(true);
       console.log("Submitting sub-category:", { name: values.name, parent: values.parent, imagesCount: images.length, tagsCount: tags.length });
-      
+
       // First create the sub-category
       const subCategoryRes = await createSubCategory(values.name, values.parent, images);
-      
+
       if (subCategoryRes?.success) {
         // Get the newly created sub-category ID - prioritize newSubCategory._id
         let subCategoryId: string | undefined = undefined;
-        
+
         if (subCategoryRes.newSubCategory?._id) {
           subCategoryId = subCategoryRes.newSubCategory._id;
         } else if (subCategoryRes.subCategories?.length > 0) {
@@ -189,18 +189,17 @@ const CreateSubCategory = ({
           const newSub = subCategoryRes.subCategories.find((sc: any) => sc.name === values.name);
           subCategoryId = newSub?._id;
         }
-        
+
         // Convert to string if it's an ObjectId
-        if (subCategoryId) {
-          if (typeof subCategoryId !== 'string') {
-            subCategoryId = subCategoryId.toString();
-          }
+        // Convert to string if it's an ObjectId or similar (though it should be string)
+        if (subCategoryId && typeof subCategoryId !== 'string') {
+          subCategoryId = (subCategoryId as any).toString();
         }
-        
+
         console.log("Sub-category created with ID:", subCategoryId);
         console.log("Sub-category response:", JSON.stringify(subCategoryRes, null, 2));
         console.log("Tags to create:", tags);
-        
+
         // Validate subCategoryId before creating tags
         if (!subCategoryId) {
           console.error("ERROR: Sub-category ID is missing! Cannot create tags.");
@@ -208,7 +207,7 @@ const CreateSubCategory = ({
           setLoading(false);
           return;
         }
-        
+
         // Then create tags for this sub-category
         if (tags.length > 0) {
           console.log(`Creating ${tags.length} tags for sub-category: ${subCategoryId}`);
@@ -228,10 +227,10 @@ const CreateSubCategory = ({
               }
             })
           );
-          
+
           const successCount = tagResults.filter((r) => r.success).length;
           const failCount = tagResults.filter((r) => !r.success).length;
-          
+
           if (failCount > 0) {
             alert(
               `Sub-category created! ${successCount} tag(s) added successfully, ${failCount} tag(s) failed. Check console for details.`
@@ -249,7 +248,7 @@ const CreateSubCategory = ({
             alert("Sub-category created successfully!");
           }
         }
-        
+
         setSubCategories(subCategoryRes.subCategories);
         form.reset();
         setImages([]);
@@ -308,7 +307,7 @@ const CreateSubCategory = ({
           />
           <SimpleGrid cols={4} spacing={"md"} mt={"md"}>
             {images.map((image, index) => (
-              <Box key={index}>
+              <Box key={index} pos="relative">
                 <Image
                   src={image}
                   alt={`Uploaded image ${index + 1}`}
@@ -316,6 +315,19 @@ const CreateSubCategory = ({
                   height={"auto"}
                   fit="cover"
                 />
+                <Button
+                  color="red"
+                  size="xs"
+                  pos="absolute"
+                  top={5}
+                  right={5}
+                  onClick={() =>
+                    setImages((prev) => prev.filter((_, i) => i !== index))
+                  }
+                  style={{ padding: 0, width: 20, height: 20, borderRadius: 10 }}
+                >
+                  &times;
+                </Button>
               </Box>
             ))}
           </SimpleGrid>
@@ -372,16 +384,16 @@ const CreateSubCategory = ({
                   label="Mandatory"
                   {...tagForm.getInputProps("isMandatory", { type: "checkbox" })}
                 />
-                <Button 
-                  onClick={addTag} 
+                <Button
+                  onClick={addTag}
                   leftSection={editingTagIndex !== null ? <IoPencil /> : <IoAdd />}
                   color={editingTagIndex !== null ? "orange" : "blue"}
                 >
                   {editingTagIndex !== null ? "Update Tag" : "Add Tag"}
                 </Button>
                 {editingTagIndex !== null && (
-                  <Button 
-                    onClick={cancelEdit} 
+                  <Button
+                    onClick={cancelEdit}
                     variant="outline"
                     color="gray"
                   >
@@ -397,9 +409,9 @@ const CreateSubCategory = ({
                   </Text>
                   <Stack gap="xs">
                     {tags.map((tag, index) => (
-                      <Paper 
-                        key={index} 
-                        p="xs" 
+                      <Paper
+                        key={index}
+                        p="xs"
                         withBorder
                         style={{
                           borderColor: editingTagIndex === index ? "orange" : undefined,
@@ -447,8 +459,8 @@ const CreateSubCategory = ({
           </Paper>
 
           <div className="mt-[1rem]">
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               className="text-white"
               disabled={loading}
               onClick={(e) => {

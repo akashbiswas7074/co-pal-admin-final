@@ -28,6 +28,11 @@ import './pending-cod-order.model';
 import './topbar.model';
 import './wishlist.model';
 import './website.settings.model'; // Added website settings model
+import './blog.model';
+import './influencer-spotlight.model';
+import './featured-review.model';
+import './collection-highlight.model';
+import './sample.model';
 
 // Optional: Re-export models if you prefer importing them via this index file.
 // e.g., export { default as User } from './user.model';

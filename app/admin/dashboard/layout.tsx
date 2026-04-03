@@ -153,6 +153,11 @@ const navigationItems: NavSection[] = [
         href: "/admin/dashboard/product/create",
         icon: <BsPatchPlus size={20} />,
         label: "Create Product"
+      },
+      {
+        href: "/admin/dashboard/samples",
+        icon: <FaLayerGroup size={20} />,
+        label: "Samples"
       }
     ]
   },
@@ -172,12 +177,32 @@ const navigationItems: NavSection[] = [
     ]
   },
   {
-    title: "Analytics",
+    title: "Content Management",
     items: [
       {
-        href: "/admin/dashboard/analytics/order",
-        icon: <VscGraph size={20} />,
-        label: "Order Analytics"
+        href: "/admin/dashboard/blogs",
+        icon: <FaRegRectangleList size={20} />,
+        label: "Blogs"
+      },
+      {
+        href: "/admin/dashboard/influencer-spotlight",
+        icon: <FaFilm size={20} />,
+        label: "Influencer Spotlight"
+      },
+      {
+        href: "/admin/dashboard/featured-review",
+        icon: <FaStar size={20} />,
+        label: "Featured Review Hero"
+      },
+      {
+        href: "/admin/dashboard/collection-highlights",
+        icon: <FaLayerGroup size={20} />,
+        label: "Collection Highlights"
+      },
+      {
+        href: "/admin/dashboard/stats-ticker",
+        icon: <FaLayerGroup size={20} />,
+        label: "Stats Ticker Management"
       }
     ]
   },

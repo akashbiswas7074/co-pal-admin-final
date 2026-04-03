@@ -24,7 +24,7 @@ export default function Home() {
                 </svg>
               </div>
             </div>
-            <CardTitle className="text-2xl font-bold">Welcome to Electrophilic</CardTitle>
+            <CardTitle className="text-2xl font-bold">Welcome to E-Commerce</CardTitle>
             <CardDescription>
               Access your dashboard to manage products, orders, and more
             </CardDescription>
@@ -60,7 +60,7 @@ export default function Home() {
         
         <div className="mt-8 text-center text-xs text-gray-500">
           <p>Secure portal access • Admin and Vendor only</p>
-          <p className="mt-1">&copy; {new Date().getFullYear()} Electrophilic. All rights reserved.</p>
+          <p className="mt-1">&copy; {new Date().getFullYear()} E-Commerce. All rights reserved.</p>
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@
 // Add hero section to available website sections
 export const availableSections = [
   // ...existing code...
+  { id: 'stats-ticker', name: 'Stats Ticker', description: 'Displays a moving band with site features and highlights' },
   { id: 'dynamic-hero-section', name: 'Dynamic Hero Sections', description: 'Displays hero sections created in the admin panel' },
 ];
 
@@ -14,6 +15,6 @@ export const addDynamicHeroSectionsToAvailable = (heroSections: any[]) => {
     description: section.subtitle.substring(0, 40) + (section.subtitle.length > 40 ? '...' : ''),
     heroSectionId: section._id
   }));
-  
+
   return [...availableSections, ...heroSectionItems];
 };

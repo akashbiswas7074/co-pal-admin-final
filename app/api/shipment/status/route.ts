@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
         }
         // Update all order items to Dispatched
         updateData['orderItems.$[].status'] = 'Dispatched';
+        updateData['products.$[].status'] = 'Dispatched';
         break;
         
       case 'Completed':
@@ -98,6 +99,8 @@ export async function POST(request: NextRequest) {
         // Update all order items to completed
         updateData['orderItems.$[].status'] = newStatus;
         updateData['orderItems.$[].productCompletedAt'] = new Date();
+        updateData['products.$[].status'] = newStatus;
+        updateData['products.$[].productCompletedAt'] = new Date();
         break;
         
       case 'cancelled':
@@ -106,12 +109,14 @@ export async function POST(request: NextRequest) {
         }
         updateData.cancelRequestedAt = new Date();
         updateData['orderItems.$[].status'] = 'cancelled';
+        updateData['products.$[].status'] = 'cancelled';
         break;
         
       case 'Confirmed':
         // Mark as ready for shipment
         updateData.isNew = false;
         updateData['orderItems.$[].status'] = 'Confirmed';
+        updateData['products.$[].status'] = 'Confirmed';
         break;
     }
     

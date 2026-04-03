@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Image from 'next/image';
+import { convertToWebP } from '@/lib/image-utils';
 
 // Define the button variants available
 const buttonVariants = [
@@ -26,23 +27,23 @@ const buttonVariants = [
 
 // Define the hero section pattern options
 const heroPatterns = [
-  { 
-    label: 'Standard', 
+  {
+    label: 'Standard',
     value: 'standard',
-    description: 'Centered text with buttons below' 
+    description: 'Centered text with buttons below'
   },
-  { 
-    label: 'Don\'t Miss', 
+  {
+    label: 'Don\'t Miss',
     value: 'dont-miss',
     description: 'Dark background with prominent product feature'
   },
-  { 
-    label: 'Brand Control', 
+  {
+    label: 'Brand Control',
     value: 'brand-control',
     description: 'Side-by-side image and text layout'
   },
-  { 
-    label: 'Partner', 
+  {
+    label: 'Partner',
     value: 'partner',
     description: 'Text on left, media on right'
   },
@@ -93,7 +94,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
     mediaType: initialData?.mediaType || 'image',
     buttons: initialData?.buttons || [{ label: 'Shop Now', link: '/shop', variant: 'primary' }],
   });
-  
+
   const [submitting, setSubmitting] = useState(false);
   const [backgroundImageFile, setBackgroundImageFile] = useState<File | null>(null);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
@@ -154,10 +155,10 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, fileType: 'backgroundImage' | 'media') => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      
+
       // Create a preview URL
       const previewUrl = URL.createObjectURL(file);
-      
+
       if (fileType === 'backgroundImage') {
         setBackgroundImageFile(file);
         setBackgroundImagePreview(previewUrl);
@@ -175,62 +176,73 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
   const uploadFile = async (file: File): Promise<string> => {
     const MAX_RETRIES = 2;
     const TIMEOUT = 30000; // 30 seconds
-    
+
     let retries = 0;
-    
+
     while (retries <= MAX_RETRIES) {
       try {
+        // Convert image to WebP if it's an image
+        let fileToUpload = file;
+        if (file.type.startsWith('image/')) {
+          try {
+            const webpBlob = await convertToWebP(file);
+            fileToUpload = new File([webpBlob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
+          } catch (webpError) {
+            console.error('WebP conversion failed for hero media:', webpError);
+          }
+        }
+
         const formData = new FormData();
-        formData.append('file', file);
-        
+        formData.append('file', fileToUpload);
+
         // Create AbortController to handle timeouts
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
-        
+
         // Compress image if it's too large (over 2MB) and it's an image
-        let fileToUpload = file;
-        if (file.size > 2 * 1024 * 1024 && file.type.startsWith('image/')) {
-          console.log('File is large, compressing before upload:', file.size);
+        if (fileToUpload.size > 2 * 1024 * 1024 && fileToUpload.type.startsWith('image/')) {
+          console.log('File is large, compressing before upload:', fileToUpload.size);
           // For simplicity, we'll just warn the user for now
           toast({
             title: "Large File",
             description: "This file is large which may cause slow uploads. Consider using a smaller image.",
-            variant: "warning",
+            variant: "default",
           });
         }
-        
+
+
         const response = await fetch('/api/admin/upload', {
           method: 'POST',
           body: formData,
           signal: controller.signal
         });
-        
+
         // Clear timeout
         clearTimeout(timeoutId);
-        
+
         const data = await response.json();
-        
+
         if (!response.ok || !data.success) {
           throw new Error(data.message || 'File upload failed');
         }
-        
+
         return data.url;
       } catch (error: any) {
         retries++;
         console.error(`Error uploading file (attempt ${retries}/${MAX_RETRIES + 1}):`, error);
-        
+
         // Check if it was a timeout
         if (error.name === 'AbortError') {
           toast({
             title: "Upload Timeout",
             description: `Upload timed out. ${retries <= MAX_RETRIES ? 'Retrying...' : 'Please try again with a smaller file.'}`,
-            variant: "warning",
+            variant: "default",
           });
         } else if (retries <= MAX_RETRIES) {
           toast({
             title: "Upload Failed",
             description: `Retry attempt ${retries}/${MAX_RETRIES + 1}...`,
-            variant: "warning",
+            variant: "default",
           });
           // Wait briefly before retrying
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -244,10 +256,10 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
         }
       }
     }
-    
+
     // If all retries failed, use a placeholder image
     console.log('All upload attempts failed, using placeholder');
-    return file.type.startsWith('image/') 
+    return file.type.startsWith('image/')
       ? `https://placehold.co/600x400?text=${encodeURIComponent(file.name.substring(0, 20))}`
       : 'https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
   };
@@ -261,23 +273,23 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
       // Upload files if selected
       let backgroundImageUrl = formData.backgroundImage;
       let mediaUrl = formData.mediaUrl;
-      
+
       if (backgroundImageFile) {
         console.log('Uploading background image:', backgroundImageFile.name);
         backgroundImageUrl = await uploadFile(backgroundImageFile);
         console.log('Background image uploaded, URL:', backgroundImageUrl);
       }
-      
+
       if (mediaFile) {
         console.log('Uploading media file:', mediaFile.name);
         mediaUrl = await uploadFile(mediaFile);
         console.log('Media uploaded, URL:', mediaUrl);
       }
-      
+
       // Format the data properly for MongoDB
       const payload = {
         title: formData.title,
-        subtitle: formData.subtitle, 
+        subtitle: formData.subtitle,
         isActive: formData.isActive,
         order: Number(formData.order),
         pattern: formData.pattern,
@@ -292,11 +304,11 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
           variant: button.variant || 'primary'
         }))
       };
-      
+
       console.log('Submitting hero section data:', JSON.stringify(payload, null, 2));
 
       let result;
-      
+
       if (mode === 'add') {
         // Create new hero section
         console.log('Creating new hero section');
@@ -306,7 +318,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
         console.log('Updating hero section with ID:', initialData._id);
         result = await updateHeroSection(initialData._id, payload);
       }
-      
+
       console.log('Server response:', result);
 
       if (result?.success) {
@@ -314,7 +326,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
           title: "Success",
           description: result.message || `Hero section ${mode === 'add' ? 'created' : 'updated'} successfully`,
         });
-        
+
         // Use window.location for navigation instead of router to avoid potential circular references
         window.location.href = '/admin/dashboard/hero-sections';
       } else {
@@ -350,10 +362,10 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
               </div>
               {mediaPreview && (
                 <div className="w-32 h-32 bg-gray-800 rounded-md overflow-hidden">
-                  <Image 
-                    src={mediaPreview} 
-                    alt="Media preview" 
-                    width={128} 
+                  <Image
+                    src={mediaPreview}
+                    alt="Media preview"
+                    width={128}
                     height={128}
                     className="w-full h-full object-cover"
                   />
@@ -368,10 +380,10 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
             <div className="flex flex-col md:flex-row items-center gap-6">
               {mediaPreview && (
                 <div className="w-40 h-32 bg-gray-100 rounded-md overflow-hidden">
-                  <Image 
-                    src={mediaPreview} 
-                    alt="Media preview" 
-                    width={160} 
+                  <Image
+                    src={mediaPreview}
+                    alt="Media preview"
+                    width={160}
                     height={128}
                     className="w-full h-full object-cover"
                   />
@@ -401,10 +413,10 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                       </div>
                     </div>
                   ) : (
-                    <Image 
-                      src={mediaPreview} 
-                      alt="Media preview" 
-                      width={160} 
+                    <Image
+                      src={mediaPreview}
+                      alt="Media preview"
+                      width={160}
                       height={128}
                       className="w-full h-full object-cover"
                     />
@@ -416,7 +428,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
         );
       default: // standard
         return (
-          <div 
+          <div
             className="bg-gray-100 p-6 rounded-md"
             style={{
               backgroundImage: backgroundImagePreview ? `url(${backgroundImagePreview})` : undefined,
@@ -425,7 +437,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
               position: 'relative',
             }}
           >
-            <div 
+            <div
               className={`flex flex-col items-${formData.contentAlignment} text-${formData.contentAlignment} relative z-10 p-4`}
               style={{
                 backgroundColor: backgroundImagePreview ? 'rgba(0,0,0,0.4)' : undefined,
@@ -449,8 +461,8 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
         <CardHeader>
           <CardTitle>{mode === 'add' ? 'Add New Hero Section' : 'Edit Hero Section'}</CardTitle>
           <CardDescription>
-            {mode === 'add' 
-              ? 'Create a new hero section to display on the website' 
+            {mode === 'add'
+              ? 'Create a new hero section to display on the website'
               : 'Modify this hero section\'s content and settings'}
           </CardDescription>
         </CardHeader>
@@ -477,7 +489,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                     required
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="subtitle">Subtitle</Label>
                   <Textarea
@@ -490,7 +502,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                     required
                   />
                 </div>
-                
+
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label htmlFor="isActive">Active Status</Label>
@@ -504,7 +516,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                     onCheckedChange={handleToggleActive}
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="order">Display Order</Label>
                   <Input
@@ -538,18 +550,18 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                       Optional: Specify a precise layout design by ID
                     </p>
                   </div>
-                  
+
                   <div>
                     <Label className="mb-3 block">Select Layout Pattern</Label>
-                    <RadioGroup 
-                      value={formData.pattern} 
+                    <RadioGroup
+                      value={formData.pattern}
                       onValueChange={(value) => handleSelectChange('pattern', value)}
                       className="grid grid-cols-1 md:grid-cols-2 gap-4"
                     >
                       {heroPatterns.map((pattern) => (
                         <div key={pattern.value} className="flex items-start space-x-2">
                           <RadioGroupItem value={pattern.value} id={`pattern-${pattern.value}`} />
-                          <Label 
+                          <Label
                             htmlFor={`pattern-${pattern.value}`}
                             className="flex flex-col cursor-pointer"
                           >
@@ -676,7 +688,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                   )}
                 </div>
               </TabsContent>
-              
+
               {/* Buttons Tab */}
               <TabsContent value="buttons" className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -692,7 +704,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                     Add Button
                   </Button>
                 </div>
-                
+
                 {formData.buttons.map((button, index) => (
                   <div key={index} className="p-4 border rounded-md space-y-3">
                     <div className="flex items-center justify-between">
@@ -708,7 +720,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                         <MdDelete size={16} />
                       </Button>
                     </div>
-                    
+
                     <div className="grid gap-3">
                       <div className="space-y-2">
                         <Label htmlFor={`button-${index}-label`}>Button Text</Label>
@@ -720,7 +732,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                           required
                         />
                       </div>
-                      
+
                       <div className="space-y-2">
                         <Label htmlFor={`button-${index}-link`}>Link URL</Label>
                         <Input
@@ -731,7 +743,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                           required
                         />
                       </div>
-                      
+
                       <div className="space-y-2">
                         <Label htmlFor={`button-${index}-variant`}>Button Style</Label>
                         <Select
@@ -754,25 +766,25 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                   </div>
                 ))}
               </TabsContent>
-              
+
               {/* Preview Tab */}
               <TabsContent value="preview" className="space-y-4">
                 <div className="border rounded-md p-6">
                   <h3 className="text-lg font-semibold mb-4">Layout Preview</h3>
                   {getPatternPreview()}
                 </div>
-                
+
                 <div className="border rounded-md p-6">
                   <h3 className="text-lg font-semibold mb-4">Content Preview</h3>
                   <div className="p-6 bg-gray-50 rounded-md">
                     <h2 className="text-2xl font-bold mb-2">{formData.title || 'Your Title Here'}</h2>
                     <p className="mb-4">{formData.subtitle || 'Your subtitle or description here'}</p>
-                    
+
                     <div className="flex gap-2 flex-wrap">
                       {formData.buttons.map((button, index) => (
-                        <Button 
-                          key={index} 
-                          variant={button.variant as any || 'primary'} 
+                        <Button
+                          key={index}
+                          variant={button.variant as any || 'primary'}
                           type="button"
                         >
                           {button.label || 'Button Text'}
@@ -784,7 +796,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
               </TabsContent>
             </Tabs>
           </CardContent>
-          
+
           <CardFooter className="flex justify-between">
             <Button
               type="button"

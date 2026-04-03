@@ -39,7 +39,7 @@ export default function HomepageSectionsPage() {
     setLoading(true);
     try {
       const result = await getAllWebsiteSections();
-      
+
       if (result.success) {
         // Sort sections by order
         const sortedSections = [...result.sections].sort((a, b) => a.order - b.order);
@@ -68,7 +68,7 @@ export default function HomepageSectionsPage() {
     setInitializing(true);
     try {
       const result = await initializeDefaultSections();
-      
+
       if (result.success) {
         toast({
           title: "Success",
@@ -100,7 +100,7 @@ export default function HomepageSectionsPage() {
     setUpdating(true);
     try {
       const result = await toggleSectionVisibility(id);
-      
+
       if (result.success) {
         fetchSections();
         toast({
@@ -138,10 +138,10 @@ export default function HomepageSectionsPage() {
 
     const newSections = [...sections];
     const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-    
+
     // Swap the positions
-    [newSections[currentIndex], newSections[targetIndex]] = 
-    [newSections[targetIndex], newSections[currentIndex]];
+    [newSections[currentIndex], newSections[targetIndex]] =
+      [newSections[targetIndex], newSections[currentIndex]];
 
     // Update the order values to match their new positions
     const sectionsWithUpdatedOrder = newSections.map((section, index) => ({
@@ -155,7 +155,7 @@ export default function HomepageSectionsPage() {
     setUpdating(true);
     try {
       const result = await updateSectionOrder(orderedIds);
-      
+
       if (result.success) {
         // Update local state to reflect the new order
         setSections(sectionsWithUpdatedOrder);
@@ -192,45 +192,51 @@ export default function HomepageSectionsPage() {
 
   return (
     <div className="container mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
+      {/* Top Header Section (Keep for reference but hide redundant title if needed, or ensure it's visible) */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-bold">Homepage Sections Management</h1>
-          <p className="text-gray-500 mt-1">
+          <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Homepage Sections Management</h1>
+          <p className="text-gray-500 mt-1 font-medium">
             Control which sections appear on the homepage and their display order
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button 
-            variant="outline" 
-            onClick={() => setIsPreviewOpen(true)}
-            className="flex items-center gap-2"
-          >
-            <Eye size={16} />
-            Preview Layout
-          </Button>
-          <Button
-            onClick={handleInitializeSections}
-            disabled={initializing}
-            variant="default"
-          >
-            {initializing ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Initializing...
-              </>
-            ) : (
-              "Initialize Default Sections"
-            )}
-          </Button>
-        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Manage Homepage Sections</CardTitle>
-          <CardDescription>
-            Drag and drop sections to change their order, or toggle visibility to show/hide them
-          </CardDescription>
+      <Card className="shadow-sm border-gray-200 overflow-hidden">
+        <CardHeader className="border-b bg-gray-50/50 py-6 px-8">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            <div>
+              <CardTitle className="text-2xl font-bold text-gray-900">Manage Homepage Sections</CardTitle>
+              <CardDescription className="text-gray-500 mt-1">
+                Drag and drop sections to change their order, or toggle visibility to show/hide them
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setIsPreviewOpen(true)}
+                className="flex items-center gap-2 border-gray-300 hover:bg-gray-100 font-semibold"
+              >
+                <Eye size={18} />
+                Preview Layout
+              </Button>
+              <Button
+                onClick={handleInitializeSections}
+                disabled={initializing}
+                variant="default"
+                className="flex items-center gap-2 bg-black hover:bg-gray-800 text-white font-bold px-6 shadow-sm"
+              >
+                {initializing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                    Initializing...
+                  </>
+                ) : (
+                  "Initialize Default Sections"
+                )}
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -333,7 +339,7 @@ export default function HomepageSectionsPage() {
               This is how your homepage sections will appear based on current visibility and order settings
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="mt-4 border rounded-md p-4 max-h-[60vh] overflow-y-auto">
             {visibleSections.length === 0 ? (
               <div className="py-8 text-center text-muted-foreground">
@@ -344,9 +350,9 @@ export default function HomepageSectionsPage() {
                 <div className="text-sm text-muted-foreground mb-4">
                   Sections will appear in the following order (top to bottom):
                 </div>
-                
+
                 {visibleSections.map((section, index) => (
-                  <div 
+                  <div
                     key={section._id}
                     className="flex items-center gap-4 p-3 bg-secondary/30 rounded-md border"
                   >

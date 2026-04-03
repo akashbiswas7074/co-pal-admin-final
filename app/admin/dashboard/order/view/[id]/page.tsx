@@ -217,7 +217,7 @@ const OrderViewPage = ({ params }: { params: Promise<{ id: string }> }) => {
               <strong>Order Date:</strong>{" "}
               {new Date(order.createdAt).toLocaleString()}
             </Text>
-            <Text className="mb-1 flex items-center">
+            <Text component="div" className="mb-1 flex items-center">
               <IconTruckDelivery size={16} className="mr-2" />
               <strong>Order Status:</strong>{" "}
               <Badge color="blue" variant="light" ml={5}>
@@ -513,8 +513,11 @@ const OrderViewPage = ({ params }: { params: Promise<{ id: string }> }) => {
                         {!item.trackingUrl && !item.trackingId && <Text size="xs" c="dimmed">N/A</Text>}
                     </Table.Td>
                     <Table.Td>
-                      {productInfo.slug && (
-                        <Link href={`/admin/dashboard/product/view/${productInfo._id || item.product?._id || item.productId}`} passHref>
+                      {(productInfo.slug || (item.isSample && item.sample?.productId)) && (
+                        <Link 
+                          href={`/admin/dashboard/product/view/${item.isSample ? item.sample?.productId : (productInfo._id || item.product?._id || item.productId)}`} 
+                          passHref
+                        >
                           <Button size="xs" variant="outline" leftSection={<IconBuildingStore size={14}/>}>
                             View Product
                           </Button>

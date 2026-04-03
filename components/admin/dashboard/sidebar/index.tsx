@@ -43,7 +43,6 @@ export const navLinks = [
       },
     ],
   },
-  { name: "Orders", href: "/admin/dashboard/orders", icon: Package },
-  { name: "Size Guide", href: "/admin/dashboard/size-guide-manager", icon: Ruler },
   { name: "Featured Video", href: "/admin/dashboard/featuredyoutube", icon: Film },
+  { name: "Samples", href: "/admin/dashboard/samples", icon: Package },
 ];

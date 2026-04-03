@@ -18,12 +18,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 
 // Import icons
-import { 
-  Check, 
-  Trash, 
-  Plus, 
-  Upload, 
-  Info, 
+import {
+  Check,
+  Trash,
+  Plus,
+  Upload,
+  Info,
   ArrowRight,
 } from "lucide-react";
 
@@ -36,6 +36,9 @@ import { getSubCategoriesByCategoryParent } from "@/lib/database/actions/admin/s
 
 // Import RichTextEditor component
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { convertToWebP } from "@/lib/image-utils";
+import { analyzeProductImage } from "@/lib/ai-service";
+import { Sparkles, Loader2 } from "lucide-react";
 import { joditConfig } from "@/components/ui/rich-text-editor";
 
 const PreviewContent = ({ content, mode, onClose }: { content: string; mode: 'desktop' | 'mobile'; onClose: () => void }) => {
@@ -44,7 +47,7 @@ const PreviewContent = ({ content, mode, onClose }: { content: string; mode: 'de
       <div className={`bg-white rounded-lg overflow-hidden flex flex-col ${mode === 'desktop' ? 'w-[80%] h-[80%]' : 'w-[375px] h-[80%]'}`}>
         <div className="flex justify-between items-center bg-gray-100 px-4 py-2">
           <h3 className="font-medium">{mode === 'desktop' ? 'Desktop' : 'Mobile'} Preview</h3>
-          <button 
+          <button
             onClick={onClose}
             className="p-1 rounded-full hover:bg-gray-200"
           >
@@ -53,9 +56,9 @@ const PreviewContent = ({ content, mode, onClose }: { content: string; mode: 'de
         </div>
         <div className="flex-1 overflow-auto p-4">
           <div className={`${mode === 'mobile' ? 'max-w-[375px] mx-auto' : 'w-full'} bg-white h-full overflow-y-auto`}>
-            <div 
+            <div
               className="prose max-w-none"
-              dangerouslySetInnerHTML={{ __html: content }} 
+              dangerouslySetInnerHTML={{ __html: content }}
             />
           </div>
         </div>
@@ -68,7 +71,7 @@ const EditProductPage = () => {
   const params = useParams();
   const router = useRouter();
   const productId = Array.isArray(params?.id) ? params?.id[0] : params?.id;
-  
+
   const [images, setImages] = useState<string[]>([]);
   const [existingImages, setExistingImages] = useState<any[]>([]);
   const [imagesToDelete, setImagesToDelete] = useState<string[]>([]); // Track images to delete
@@ -76,6 +79,7 @@ const EditProductPage = () => {
   const [categories, setCategories] = useState<{ _id: string; name: string }[]>([]);
   const [subs, setSubs] = useState<any>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [featuredCheck, setFeaturedCheck] = useState<boolean>(false);
   const editor = useRef(null);
   const [activeTab, setActiveTab] = useState("basic");
@@ -107,16 +111,17 @@ const EditProductPage = () => {
   useEffect(() => {
     const fetchProductData = async () => {
       if (!productId) return;
-      
+
       setLoading(true);
       try {
         const result = await getEntireProductById(productId);
         if (result && result.success) {
           setOriginalProduct(result.product);
           const product = result.product;
-          
+
           // Set the form values based on the product data
-          setFormValues({
+          setFormValues((prev: any) => ({
+            ...prev,
             name: product.name || "",
             description: product.description || "",
             brand: product.brand || "",
@@ -127,32 +132,32 @@ const EditProductPage = () => {
             parent: product.parent || "",
             category: product.category?._id || "",
             subCategories: product.subCategories?.map((subCat: any) => subCat._id) || [],
-            sizes: product.subProducts?.[0]?.sizes?.length > 0 
-              ? product.subProducts[0].sizes 
+            sizes: product.subProducts?.[0]?.sizes?.length > 0
+              ? product.subProducts[0].sizes
               : [{ size: "", qty: "", price: "" }],
-            benefits: product.benefits?.length > 0 
-              ? product.benefits 
+            benefits: product.benefits?.length > 0
+              ? product.benefits
               : [{ name: "" }],
-            ingredients: product.ingredients?.length > 0 
-              ? product.ingredients 
+            ingredients: product.ingredients?.length > 0
+              ? product.ingredients
               : [{ name: "" }],
-            questions: product.questions?.length > 0 
-              ? product.questions 
+            questions: product.questions?.length > 0
+              ? product.questions
               : [{ question: "", answer: "" }],
             shippingFee: product.shippingFee || "",
-            details: product.details?.length > 0 
-              ? product.details 
+            details: product.details?.length > 0
+              ? product.details
               : [{ name: "", value: "" }],
-          });
-          
+          }));
+
           // Set existing images
           if (product.subProducts?.[0]?.images?.length > 0) {
             setExistingImages(product.subProducts[0].images);
           }
-          
+
           // Set featured status
           setFeaturedCheck(product.featured || false);
-          
+
           setLoading(false);
         } else {
           toast({
@@ -175,6 +180,63 @@ const EditProductPage = () => {
     fetchProductData();
   }, [productId, router]);
 
+  const handleAIAnalysis = async () => {
+    // Check for new upload or existing image
+    const imageToAnalyze = formValues.imageFiles.length > 0
+      ? formValues.imageFiles[0]
+      : null;
+
+    if (!imageToAnalyze) {
+      toast({
+        title: "No New Images",
+        description: "Please upload a new product image to analyze.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const result = await analyzeProductImage(imageToAnalyze);
+      if (result) {
+        setFormValues((prev: any) => ({
+          ...prev,
+          name: result.name || prev.name,
+          description: result.description || prev.description,
+          longDescription: result.longDescription || prev.longDescription,
+          sku: result.sku || prev.sku,
+          brand: result.brand || prev.brand,
+          discount: result.discount ? (parseInt(result.discount.toString().replace(/[^0-9]/g, '')) || 0) : prev.discount,
+          benefits: (result.benefits || []).map(b => ({ name: b })),
+          ingredients: (result.ingredients || []).map(i => ({ name: i })),
+          details: result.details ? Object.entries(result.details).map(([name, value]) => ({ name, value: value as string })) : prev.details,
+          sizes: (result.potential_sizes || []).map(s => ({ size: s, qty: "10", price: result.price ? result.price.toString().replace(/[^0-9.]/g, '') : "0" })),
+          questions: (result.questions || []).map(q => ({ question: q.question, answer: q.answer })),
+        }));
+
+        toast({
+          title: "Analysis Complete",
+          description: "Product details have been populated from the image.",
+        });
+      } else {
+        toast({
+          title: "Analysis Failed",
+          description: "Could not analyze the image. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("AI analysis failed:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred during AI analysis.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const validateForm = () => {
     const errors: any = {};
     if (!formValues.name || formValues.name.length < 10) {
@@ -192,7 +254,7 @@ const EditProductPage = () => {
     if (!formValues.category) {
       errors.category = "Category is required";
     }
-    
+
     // Sizes are now optional - no validation required
     // Products can be created without any sizes for items like accessories, electronics, etc.
 
@@ -212,16 +274,16 @@ const EditProductPage = () => {
       // Create URL previews for the images
       const fileArray = Array.from(event.target.files);
       const previewUrls = fileArray.map(file => URL.createObjectURL(file));
-      
+
       // Update the images preview state
       setImages(previewUrls);
-      
+
       // Update the form values with the actual file objects
       setFormValues((prev: any) => ({
         ...prev,
         imageFiles: fileArray
       }));
-      
+
       // Clear any existing errors for the images
       if (formErrors.imageFiles) {
         setFormErrors((prev: any) => ({
@@ -328,7 +390,7 @@ const EditProductPage = () => {
   // handle Submit function
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validateForm()) {
       // Scroll to the first error
       const firstErrorField = Object.keys(formErrors)[0];
@@ -343,21 +405,35 @@ const EditProductPage = () => {
       setLoading(true);
       try {
         let uploaded_images = existingImages;
-        
+
         // Upload new images if any
         if (formValues.imageFiles.length > 0) {
           const array = [];
-          
-          // Upload images via API route
+
+          // Upload new images via API route
           for (let i = 0; i < formValues.imageFiles.length; i++) {
+            const file = formValues.imageFiles[i];
+
+            // Convert to WebP if it's a file
+            let fileToUpload = file;
+            if (file instanceof File) {
+              try {
+                const webpBlob = await convertToWebP(file);
+                fileToUpload = new File([webpBlob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
+              } catch (e) {
+                console.error('WebP conversion failed for product image:', e);
+              }
+            }
+
             const formData = new FormData();
-            formData.append("file", formValues.imageFiles[i]);
+            formData.append("file", fileToUpload);
             formData.append("upload_preset", "website"); // Send preset to API route
             try {
               // Call the internal API route
               const uploadResponse = await fetch("/api/upload", {
                 method: "POST",
                 body: formData,
+                // ...
               });
 
               if (!uploadResponse.ok) {
@@ -376,7 +452,7 @@ const EditProductPage = () => {
                   }
                 }
                 console.error(`API route upload error for image ${i + 1}:`, errorDetail);
-                throw new Error(errorDetail); 
+                throw new Error(errorDetail);
               }
 
               const uploadedImagesData = await uploadResponse.json();
@@ -385,9 +461,9 @@ const EditProductPage = () => {
               if (uploadedImagesData.error) {
                 const appErrorDetail = uploadedImagesData.error?.message || uploadedImagesData.error;
                 console.error(`Application error in upload response for image ${i + 1}:`, appErrorDetail);
-                throw new Error(String(appErrorDetail)); 
+                throw new Error(String(appErrorDetail));
               }
-              
+
               array.push(uploadedImagesData);
             } catch (error: any) {
               console.error(`Error processing image ${i + 1} via API route:`, error);
@@ -400,37 +476,42 @@ const EditProductPage = () => {
               return;
             }
           }
-          
+
           // Prepare the uploaded images for submission
           const new_uploaded_images = array.map((i) => ({
             url: i.secure_url,
             public_id: i.public_id,
           }));
-          
+
           // Combine existing images with newly uploaded ones
           uploaded_images = [...existingImages, ...new_uploaded_images];
         }
-        
+
         // Call the update product function with all parameters including images
         const result = await updateProduct(
-          productId,
+          productId as string,
           formValues.sku,
           formValues.sizes,
           formValues.discount,
           formValues.name,
           formValues.description,
           formValues.longDescription,
-          formValues.brand,
           formValues.details,
           formValues.questions,
           formValues.benefits,
           formValues.ingredients,
-          uploaded_images, // images parameter
+          uploaded_images,
           formValues.category,
           formValues.subCategories,
           featuredCheck,
-          formValues.shippingFee,
-          formValues.description // shortDescription parameter
+          formValues.shippingFee ? parseFloat(formValues.shippingFee) : undefined,
+          formValues.description, // shortDescription
+          undefined, // price
+          undefined, // qty
+          undefined, // stock
+          undefined, // tagValues
+          undefined, // shippingDimensions
+          formValues.brand
         );
 
         if (result && result.success) {
@@ -456,7 +537,7 @@ const EditProductPage = () => {
         setLoading(false);
       }
     };
-    
+
     await updateProductHandler();
   };
 
@@ -485,8 +566,8 @@ const EditProductPage = () => {
       try {
         if (formValues.category.length > 0) {
           const res = await getSubCategoriesByCategoryParent(
-            typeof formValues.category === 'string' 
-              ? formValues.category 
+            typeof formValues.category === 'string'
+              ? formValues.category
               : formValues.category[0]
           );
           if (res?.success) {
@@ -509,16 +590,16 @@ const EditProductPage = () => {
 
   // Add preview functionality that works on both desktop and mobile
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile' | null>(null);
-  
+
   // Preview content state
   const [previewContent, setPreviewContent] = useState<string>('');
-  
+
   // Function to open preview
   const openPreview = (mode: 'desktop' | 'mobile') => {
     setPreviewMode(mode);
     setPreviewContent(formValues.longDescription || '');
   };
-  
+
   // Function to close preview
   const closePreview = () => {
     setPreviewMode(null);
@@ -546,7 +627,7 @@ const EditProductPage = () => {
   const handleDeleteExistingImage = (indexToDelete: number) => {
     const updatedImages = existingImages.filter((_, index) => index !== indexToDelete);
     setExistingImages(updatedImages);
-    
+
     // Clear validation error if at least one image remains
     if (updatedImages.length > 0 || formValues.imageFiles.length > 0) {
       if (formErrors.imageFiles) {
@@ -562,13 +643,13 @@ const EditProductPage = () => {
   const handleDeleteNewImage = (indexToDelete: number) => {
     const updatedPreviews = images.filter((_, index) => index !== indexToDelete);
     const updatedFiles = formValues.imageFiles.filter((_: any, index: number) => index !== indexToDelete);
-    
+
     setImages(updatedPreviews);
     setFormValues((prev: any) => ({
       ...prev,
       imageFiles: updatedFiles
     }));
-    
+
     // Clean up object URLs to prevent memory leaks
     if (images[indexToDelete]) {
       URL.revokeObjectURL(images[indexToDelete]);
@@ -593,7 +674,7 @@ const EditProductPage = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold tracking-tight mb-6 text-center">Edit Product</h1>
-      
+
       <div className="mb-8">
         <Tabs defaultValue="basic" value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid grid-cols-5 mb-8">
@@ -603,7 +684,7 @@ const EditProductPage = () => {
             <TabsTrigger value="attributes">Attributes</TabsTrigger>
             <TabsTrigger value="media">Media & Details</TabsTrigger>
           </TabsList>
-          
+
           <form onSubmit={handleSubmit}>
             {/* Basic Info Tab */}
             <TabsContent value="basic">
@@ -689,8 +770,8 @@ const EditProductPage = () => {
                   </div>
                 </CardContent>
                 <CardFooter className="flex justify-end">
-                  <Button 
-                    type="button" 
+                  <Button
+                    type="button"
                     onClick={() => setActiveTab("categories")}
                     className="flex items-center gap-2"
                   >
@@ -718,9 +799,8 @@ const EditProductPage = () => {
                       id="category"
                       value={formValues.category}
                       onChange={(e) => handleInputChange("category", e.target.value)}
-                      className={`w-full rounded-md border ${
-                        formErrors.category ? "border-red-500" : "border-input"
-                      } bg-transparent px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`}
+                      className={`w-full rounded-md border ${formErrors.category ? "border-red-500" : "border-input"
+                        } bg-transparent px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`}
                     >
                       <option value="">Select a category</option>
                       {categories.map((category) => (
@@ -768,15 +848,15 @@ const EditProductPage = () => {
                   </div>
                 </CardContent>
                 <CardFooter className="flex justify-between">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     onClick={() => setActiveTab("basic")}
                   >
                     Back
                   </Button>
-                  <Button 
-                    type="button" 
+                  <Button
+                    type="button"
                     onClick={() => setActiveTab("variants")}
                     className="flex items-center gap-2"
                   >
@@ -799,10 +879,10 @@ const EditProductPage = () => {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between mb-4">
                       <Label className="text-base font-medium">Sizes & Pricing <span className="text-muted-foreground">(Optional)</span></Label>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={addSize}
                         className="h-9 px-4"
                       >
@@ -810,7 +890,7 @@ const EditProductPage = () => {
                         Add Size
                       </Button>
                     </div>
-                    
+
                     <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
                       <div className="flex items-start gap-2">
                         <div className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0">ℹ️</div>
@@ -836,11 +916,11 @@ const EditProductPage = () => {
                         <div className="text-sm font-medium text-muted-foreground">Price (₹)</div>
                         <div></div>
                       </div>
-                      
+
                       {/* Size rows */}
                       {formValues.sizes.map((size: any, index: number) => (
-                        <div 
-                          key={index} 
+                        <div
+                          key={index}
                           className="grid grid-cols-[1fr,1fr,1fr,auto] gap-3 items-end p-4 border rounded-lg bg-muted/20 hover:bg-muted/30 transition-colors"
                         >
                           <div>
@@ -892,7 +972,7 @@ const EditProductPage = () => {
                           </div>
                         </div>
                       ))}
-                      
+
                       {formValues.sizes.length === 0 && (
                         <div className="p-8 border border-dashed rounded-lg text-center">
                           <p className="text-muted-foreground">No sizes added yet. Click "Add Size" to add product sizes.</p>
@@ -902,15 +982,15 @@ const EditProductPage = () => {
                   </div>
                 </CardContent>
                 <CardFooter className="flex justify-between">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     onClick={() => setActiveTab("categories")}
                   >
                     Back
                   </Button>
-                  <Button 
-                    type="button" 
+                  <Button
+                    type="button"
                     onClick={() => setActiveTab("attributes")}
                     className="flex items-center gap-2"
                   >
@@ -934,10 +1014,10 @@ const EditProductPage = () => {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label>Benefits</Label>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={addBenefit}
                         className="h-8"
                       >
@@ -948,8 +1028,8 @@ const EditProductPage = () => {
 
                     <div className="space-y-3 mt-2">
                       {formValues.benefits.map((benefit: any, index: number) => (
-                        <div 
-                          key={index} 
+                        <div
+                          key={index}
                           className="flex items-center gap-3 p-3 border rounded-lg bg-muted/30"
                         >
                           <div className="flex-1">
@@ -977,10 +1057,10 @@ const EditProductPage = () => {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label>Ingredients</Label>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={addIngredient}
                         className="h-8"
                       >
@@ -991,8 +1071,8 @@ const EditProductPage = () => {
 
                     <div className="space-y-3 mt-2">
                       {formValues.ingredients.map((ingredient: any, index: number) => (
-                        <div 
-                          key={index} 
+                        <div
+                          key={index}
                           className="flex items-center gap-3 p-3 border rounded-lg bg-muted/30"
                         >
                           <div className="flex-1">
@@ -1020,10 +1100,10 @@ const EditProductPage = () => {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label>Additional Details</Label>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={addDetail}
                         className="h-8"
                       >
@@ -1034,8 +1114,8 @@ const EditProductPage = () => {
 
                     <div className="space-y-3 mt-2">
                       {formValues.details.map((detail: any, index: number) => (
-                        <div 
-                          key={index} 
+                        <div
+                          key={index}
                           className="grid grid-cols-[1fr,1fr,auto] gap-3 items-center p-3 border rounded-lg bg-muted/30"
                         >
                           <Input
@@ -1066,10 +1146,10 @@ const EditProductPage = () => {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label>FAQ/Questions</Label>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={addQuestion}
                         className="h-8"
                       >
@@ -1080,8 +1160,8 @@ const EditProductPage = () => {
 
                     <div className="space-y-4 mt-2">
                       {formValues.questions.map((q: any, index: number) => (
-                        <div 
-                          key={index} 
+                        <div
+                          key={index}
                           className="space-y-3 p-3 border rounded-lg bg-muted/30"
                         >
                           <div>
@@ -1122,15 +1202,15 @@ const EditProductPage = () => {
                   </div>
                 </CardContent>
                 <CardFooter className="flex justify-between">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     onClick={() => setActiveTab("variants")}
                   >
                     Back
                   </Button>
-                  <Button 
-                    type="button" 
+                  <Button
+                    type="button"
                     onClick={() => setActiveTab("media")}
                     className="flex items-center gap-2"
                   >
@@ -1150,6 +1230,31 @@ const EditProductPage = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  {/* Product Images */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="images">
+                        Product Images <span className="text-red-500">*</span>
+                      </Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAIAnalysis}
+                        disabled={isAnalyzing || formValues.imageFiles.length === 0}
+                        className="h-8 flex items-center gap-2 border-primary/20 hover:bg-primary/5 hover:border-primary/50 transition-all duration-300"
+                      >
+                        {isAnalyzing ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        ) : (
+                          <Sparkles className="h-4 w-4 text-primary" />
+                        )}
+                        <span className={isAnalyzing ? "animate-pulse" : ""}>
+                          {isAnalyzing ? "Analyzing..." : "Analyze with AI"}
+                        </span>
+                      </Button>
+                    </div>
+                  </div>
                   <div className="space-y-2">
                     <Label>Existing Images</Label>
                     <div className="grid grid-cols-4 gap-4 mt-2">
@@ -1203,7 +1308,7 @@ const EditProductPage = () => {
                           />
                         </label>
                       </div>
-                      
+
                       {formErrors.imageFiles && (
                         <p className="text-red-500 text-xs mt-1">{formErrors.imageFiles}</p>
                       )}
@@ -1259,19 +1364,19 @@ const EditProductPage = () => {
                     </div>
                     {/* Desktop & Mobile Preview Buttons */}
                     <div className="flex items-center justify-end gap-2 mt-2">
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={() => handlePreview('desktop')}
                         className="text-xs"
                       >
                         Desktop Preview
                       </Button>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={() => handlePreview('mobile')}
                         className="text-xs"
                       >
@@ -1281,15 +1386,15 @@ const EditProductPage = () => {
                   </div>
                 </CardContent>
                 <CardFooter className="flex justify-between">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     onClick={() => setActiveTab("attributes")}
                   >
                     Back
                   </Button>
-                  <Button 
-                    type="submit" 
+                  <Button
+                    type="submit"
                     disabled={loading}
                     className="flex items-center gap-2"
                   >
@@ -1302,13 +1407,13 @@ const EditProductPage = () => {
           </form>
         </Tabs>
       </div>
-      
+
       {/* Preview Content Modal */}
       {previewMode && previewContent && (
-        <PreviewContent 
-          content={previewContent} 
-          mode={previewMode} 
-          onClose={closePreview} 
+        <PreviewContent
+          content={previewContent}
+          mode={previewMode}
+          onClose={closePreview}
         />
       )}
     </div>

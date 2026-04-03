@@ -17,11 +17,14 @@ import {
   getParentsandCategories,
   getSingleProductById,
 } from "@/lib/database/actions/admin/products/products.actions";
+import { useToast } from "@/hooks/use-toast";
 import { getSubCategoriesByCategoryParent } from "@/lib/database/actions/admin/subCategories/subcategories.actions";
 import { getTagsBySubCategory, getTagsByCategory } from "@/lib/database/actions/admin/tags/tags.actions";
 
-// Import RichTextEditor component
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { convertToWebP } from "@/lib/image-utils";
+import { analyzeProductImage } from "@/lib/ai-service";
+import { Sparkles, Loader2 } from "lucide-react";
 
 // Define types
 interface FormValues {
@@ -48,6 +51,8 @@ interface FormValues {
     height: string;
     weight: string;
   };
+  sample5mlPrice: string;
+  sample10mlPrice: string;
 }
 
 const PreviewContent = ({ content, mode, onClose }: { content: string; mode: 'desktop' | 'mobile'; onClose: () => void }) => {
@@ -77,6 +82,7 @@ const PreviewContent = ({ content, mode, onClose }: { content: string; mode: 'de
 };
 
 const CreateProductPage = () => {
+  const { toast } = useToast();
   const [images, setImages] = useState<string[]>([]);
   const [parents, setParents] = useState<{ _id: string; name: string }[]>([]);
   const [categories, setCategories] = useState<{ _id: string; name: string }[]>([]);
@@ -106,6 +112,8 @@ const CreateProductPage = () => {
     });
   }, [images]);
 
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
   // Form state
   const [formValues, setFormValues] = useState<FormValues>({
     name: "",
@@ -131,6 +139,8 @@ const CreateProductPage = () => {
       height: "",
       weight: "",
     },
+    sample5mlPrice: "",
+    sample10mlPrice: "",
   });
 
   const [formErrors, setFormErrors] = useState<any>({});
@@ -412,8 +422,19 @@ const CreateProductPage = () => {
 
       // Upload new images via API route
       for (let i = 0; i < formValues.imageFiles.length; i++) {
+        const file = formValues.imageFiles[i];
+
+        // Convert to WebP
+        let fileToUpload = file;
+        try {
+          const webpBlob = await convertToWebP(file);
+          fileToUpload = new File([webpBlob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
+        } catch (e) {
+          console.error('WebP conversion failed for product image:', e);
+        }
+
         const formData = new FormData();
-        formData.append("file", formValues.imageFiles[i]);
+        formData.append("file", fileToUpload);
         formData.append("upload_preset", "website"); // Send preset to API route
         try {
           // Call the internal API route
@@ -486,7 +507,9 @@ const CreateProductPage = () => {
           undefined, // qty
           undefined, // stock
           formValues.tagValues, // tagValues
-          formValues.shippingDimensions // shippingDimensions
+          formValues.shippingDimensions, // shippingDimensions
+          parseFloat(formValues.sample5mlPrice) || 0,
+          parseFloat(formValues.sample10mlPrice) || 0
         ).then((res) => {
           if (res.success) {
             setLoading(false);
@@ -515,6 +538,9 @@ const CreateProductPage = () => {
                 height: "",
                 weight: "",
               },
+              sample5mlPrice: "",
+              sample10mlPrice: "",
+              brand: "",
             });
             setImages([]);
             alert(res.message || "Product created Successfully");
@@ -758,6 +784,64 @@ const CreateProductPage = () => {
   const handleDescriptionChange = (content: string) => {
     longDescriptionRef.current = content; // Store in ref only, no re-render
   };
+  const handleAIAnalysis = async () => {
+    if (formValues.imageFiles.length === 0) {
+      toast({
+        title: "No Images",
+        description: "Please upload at least one product image to analyze.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const result = await analyzeProductImage(formValues.imageFiles[0]);
+      if (result) {
+        setFormValues(prev => ({
+          ...prev,
+          name: result.name || prev.name,
+          description: result.description || prev.description,
+          longDescription: result.longDescription || prev.longDescription,
+          sku: result.sku || prev.sku,
+          discount: result.discount ? (parseInt(result.discount.toString().replace(/[^0-9]/g, '')) || 0) : prev.discount,
+          benefits: (result.benefits || []).map(b => ({ name: b })),
+          ingredients: (result.ingredients || []).map(i => ({ name: i })),
+          details: result.details ? Object.entries(result.details).map(([name, value]) => ({ name, value: value as string })) : prev.details,
+          sizes: (result.potential_sizes || []).map(s => ({ size: s, qty: "10", price: result.price ? result.price.toString().replace(/[^0-9.]/g, '') : "0" })),
+          shippingDimensions: {
+            length: result.shippingDimensions?.length ? result.shippingDimensions.length.toString().replace(/[^0-9.]/g, '') : prev.shippingDimensions.length,
+            breadth: result.shippingDimensions?.breadth ? result.shippingDimensions.breadth.toString().replace(/[^0-9.]/g, '') : prev.shippingDimensions.breadth,
+            height: result.shippingDimensions?.height ? result.shippingDimensions.height.toString().replace(/[^0-9.]/g, '') : prev.shippingDimensions.height,
+            weight: result.shippingDimensions?.weight ? result.shippingDimensions.weight.toString().replace(/[^0-9.]/g, '') : prev.shippingDimensions.weight,
+          },
+          questions: (result.questions || []).map(q => ({ question: q.question, answer: q.answer })),
+          sample5mlPrice: result.sample5mlPrice ? result.sample5mlPrice.toString().replace(/[^0-9.]/g, '') : prev.sample5mlPrice,
+          sample10mlPrice: result.sample10mlPrice ? result.sample10mlPrice.toString().replace(/[^0-9.]/g, '') : prev.sample10mlPrice,
+        }));
+
+        toast({
+          title: "Analysis Complete",
+          description: "Product details have been populated from the image.",
+        });
+      } else {
+        toast({
+          title: "Analysis Failed",
+          description: "Could not analyze the image. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("AI analysis failed:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred during AI analysis.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -832,7 +916,29 @@ const CreateProductPage = () => {
                         <p className="text-red-500 text-xs">{formErrors.sku}</p>
                       )}
                     </div>
-
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="sample5mlPrice">5ml Sample Price (₹)</Label>
+                      <Input
+                        id="sample5mlPrice"
+                        type="number"
+                        placeholder="e.g. 60"
+                        value={formValues.sample5mlPrice}
+                        onChange={(e) => handleInputChange("sample5mlPrice", e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="sample10mlPrice">10ml Sample Price (₹)</Label>
+                      <Input
+                        id="sample10mlPrice"
+                        type="number"
+                        placeholder="e.g. 100"
+                        value={formValues.sample10mlPrice}
+                        onChange={(e) => handleInputChange("sample10mlPrice", e.target.value)}
+                      />
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -1494,6 +1600,23 @@ const CreateProductPage = () => {
                       <Label htmlFor="images">
                         Product Images <span className="text-red-500">*</span>
                       </Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAIAnalysis}
+                        disabled={isAnalyzing || formValues.imageFiles.length === 0}
+                        className="h-8 flex items-center gap-2 border-primary/20 hover:bg-primary/5 hover:border-primary/50 transition-all duration-300"
+                      >
+                        {isAnalyzing ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        ) : (
+                          <Sparkles className="h-4 w-4 text-primary" />
+                        )}
+                        <span className={isAnalyzing ? "animate-pulse" : ""}>
+                          {isAnalyzing ? "Analyzing..." : "Analyze with AI"}
+                        </span>
+                      </Button>
                     </div>
 
                     <div className="grid grid-cols-1 gap-4">

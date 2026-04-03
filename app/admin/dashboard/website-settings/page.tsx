@@ -22,30 +22,31 @@ import {
   activateWebsiteSettings,
   deleteWebsiteSettings
 } from "@/lib/database/actions/website.settings.actions";
+import { convertToWebP } from "@/lib/image-utils";
 
 // Form validation schema
 const websiteSettingsSchema = z.object({
   // Basic SEO
   siteName: z.string().min(1, "Site name is required").max(100, "Site name cannot exceed 100 characters"),
   siteDescription: z.string().min(1, "Site description is required").max(160, "Description cannot exceed 160 characters"),
-  siteKeywords: z.array(z.string()).optional(),
+  siteKeywords: z.array(z.string()),
   defaultTitle: z.string().min(1, "Default title is required").max(60, "Title cannot exceed 60 characters"),
-  titleSeparator: z.string().default(" | "),
-  
+  titleSeparator: z.string(),
+
   // Open Graph
   ogTitle: z.string().max(40, "OG title cannot exceed 40 characters").optional(),
   ogDescription: z.string().max(300, "OG description cannot exceed 300 characters").optional(),
   ogImage: z.string().url("Must be a valid URL").optional().or(z.literal("")),
-  ogType: z.enum(["website", "article", "product", "profile"]).default("website"),
-  
+  ogType: z.enum(["website", "article", "product", "profile"]),
+
   // Twitter Card
   twitterTitle: z.string().max(70, "Twitter title cannot exceed 70 characters").optional(),
   twitterDescription: z.string().max(200, "Twitter description cannot exceed 200 characters").optional(),
   twitterImage: z.string().url("Must be a valid URL").optional().or(z.literal("")),
-  twitterCard: z.enum(["summary", "summary_large_image", "app", "player"]).default("summary_large_image"),
+  twitterCard: z.enum(["summary", "summary_large_image", "app", "player"]),
   twitterSite: z.string().optional(),
   twitterCreator: z.string().optional(),
-  
+
   // Favicons
   favicon: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   favicon16: z.string().url("Must be a valid URL").optional().or(z.literal("")),
@@ -54,25 +55,25 @@ const websiteSettingsSchema = z.object({
   androidChrome192: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   androidChrome512: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   safariPinnedTab: z.string().url("Must be a valid URL").optional().or(z.literal("")),
-  msTileColor: z.string().default("#da532c"),
-  themeColor: z.string().default("#ffffff"),
-  
+  msTileColor: z.string(),
+  themeColor: z.string(),
+
   // Additional Meta
   author: z.string().optional(),
-  robots: z.string().default("index, follow"),
+  robots: z.string(),
   canonical: z.string().url("Must be a valid URL").optional().or(z.literal("")),
-  
+
   // Analytics
   googleAnalyticsId: z.string().optional(),
   googleTagManagerId: z.string().optional(),
   facebookPixelId: z.string().optional(),
-  
+
   // Organization Schema
   organizationName: z.string().optional(),
   organizationUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   organizationLogo: z.string().url("Must be a valid URL").optional().or(z.literal("")),
-  organizationType: z.enum(["Organization", "Corporation", "EducationalOrganization", "LocalBusiness", "Store"]).default("Organization"),
-  
+  organizationType: z.enum(["Organization", "Corporation", "EducationalOrganization", "LocalBusiness", "Store"]),
+
   // Theme Settings
   themeSettings: z.object({
     primaryColor: z.string().default("#2B2B2B"),
@@ -97,7 +98,7 @@ export default function WebsiteSettingsPage() {
   const [keywordsInput, setKeywordsInput] = useState("");
 
   const form = useForm<WebsiteSettingsFormValues>({
-    resolver: zodResolver(websiteSettingsSchema),
+    resolver: zodResolver(websiteSettingsSchema) as any,
     defaultValues: {
       siteName: "",
       siteDescription: "",
@@ -120,7 +121,7 @@ export default function WebsiteSettingsPage() {
       const result = await getAllWebsiteSettings();
       if (result.success) {
         setExistingSettings(result.settings);
-        
+
         // Load active settings into form
         const activeSettings = result.settings.find((s: any) => s.isActive);
         if (activeSettings) {
@@ -190,8 +191,19 @@ export default function WebsiteSettingsPage() {
 
   // Handle file upload for favicons
   const handleFaviconUpload = async (file: File, field: string) => {
+    // Convert to WebP if it's an image and not already webp or ico
+    let fileToUpload = file;
+    if (file.type.startsWith('image/') && !file.name.endsWith('.ico')) {
+      try {
+        const webpBlob = await convertToWebP(file);
+        fileToUpload = new File([webpBlob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
+      } catch (e) {
+        console.error('WebP conversion failed for favicon:', e);
+      }
+    }
+
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', fileToUpload);
     formData.append('folder', 'favicons');
 
     try {
@@ -201,14 +213,14 @@ export default function WebsiteSettingsPage() {
       });
 
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.message || 'Failed to upload favicon');
       }
 
       // Update form field with the uploaded URL
       form.setValue(field as any, data.url);
-      
+
       toast({
         title: "Success",
         description: "Favicon uploaded successfully",
@@ -439,9 +451,9 @@ export default function WebsiteSettingsPage() {
                       <FormItem>
                         <FormLabel>Site Description *</FormLabel>
                         <FormControl>
-                          <Textarea 
-                            placeholder="A brief description of your website" 
-                            {...field} 
+                          <Textarea
+                            placeholder="A brief description of your website"
+                            {...field}
                             rows={3}
                           />
                         </FormControl>
@@ -746,7 +758,7 @@ export default function WebsiteSettingsPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <h4 className="font-medium">Standard Favicons</h4>
-                      
+
                       <FormField
                         control={form.control}
                         name="favicon"
@@ -1155,7 +1167,7 @@ export default function WebsiteSettingsPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <h4 className="font-medium">Color Scheme</h4>
-                      
+
                       <FormField
                         control={form.control}
                         name="themeSettings.primaryColor"
@@ -1360,14 +1372,14 @@ export default function WebsiteSettingsPage() {
                         <FormItem>
                           <FormLabel>Custom CSS</FormLabel>
                           <FormControl>
-                            <Textarea 
+                            <Textarea
                               placeholder="/* Add your custom CSS here */
 .custom-button {
   background: linear-gradient(45deg, #ff6b6b, #ee5a6f);
   border: none;
   color: white;
-}" 
-                              {...field} 
+}"
+                              {...field}
                               rows={8}
                               className="font-mono text-sm"
                             />
@@ -1385,18 +1397,18 @@ export default function WebsiteSettingsPage() {
                     <h4 className="font-medium">Theme Preview</h4>
                     <div className="border rounded-lg p-6 bg-gradient-to-br from-gray-50 to-gray-100">
                       <div className="space-y-4">
-                        <div 
+                        <div
                           className="p-4 rounded-lg text-white font-medium"
-                          style={{ 
+                          style={{
                             backgroundColor: form.watch('themeSettings.primaryColor') || '#2B2B2B',
                             borderRadius: form.watch('themeSettings.borderRadius') || '0.5rem'
                           }}
                         >
                           Primary Button Example
                         </div>
-                        <div 
+                        <div
                           className="p-4 rounded-lg border"
-                          style={{ 
+                          style={{
                             backgroundColor: form.watch('themeSettings.backgroundColor') || '#FFFFFF',
                             color: form.watch('themeSettings.textColor') || '#1F2937',
                             borderRadius: form.watch('themeSettings.borderRadius') || '0.5rem',
@@ -1405,12 +1417,12 @@ export default function WebsiteSettingsPage() {
                         >
                           <h5 className="font-semibold mb-2">Sample Content</h5>
                           <p className="text-sm">
-                            This is how your content will look with the selected theme settings. 
+                            This is how your content will look with the selected theme settings.
                             The typography, colors, and border radius will be applied across your website.
                           </p>
-                          <button 
+                          <button
                             className="mt-3 px-4 py-2 text-white text-sm rounded"
-                            style={{ 
+                            style={{
                               backgroundColor: form.watch('themeSettings.accentColor') || '#3B82F6',
                               borderRadius: form.watch('themeSettings.borderRadius') || '0.5rem'
                             }}

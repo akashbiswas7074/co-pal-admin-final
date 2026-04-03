@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import Image from 'next/image';
+import { convertToWebP } from '@/lib/image-utils';
 
 // Define the button variants available
 const buttonVariants = [
@@ -27,26 +28,26 @@ const buttonVariants = [
 
 // Define the hero section pattern options
 const heroPatterns = [
-  { 
-    label: 'Standard', 
+  {
+    label: 'Standard',
     value: 'standard',
     description: 'Centered text with buttons below',
     icon: '📄'
   },
-  { 
-    label: 'Don\'t Miss', 
+  {
+    label: 'Don\'t Miss',
     value: 'dont-miss',
     description: 'Dark background with prominent product feature',
     icon: '🎯'
   },
-  { 
-    label: 'Brand Control', 
+  {
+    label: 'Brand Control',
     value: 'brand-control',
     description: 'Side-by-side image and text layout',
     icon: '🏢'
   },
-  { 
-    label: 'Partner', 
+  {
+    label: 'Partner',
     value: 'partner',
     description: 'Text on left, media on right',
     icon: '🤝'
@@ -108,7 +109,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
     buttonBackgroundColor: initialData?.buttonBackgroundColor || '',
     buttons: initialData?.buttons || [], // Empty array by default instead of having a default button
   });
-  
+
   const [submitting, setSubmitting] = useState(false);
   const [backgroundImageFile, setBackgroundImageFile] = useState<File | null>(null);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
@@ -132,13 +133,13 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
   // Validation function
   const validateForm = () => {
     const errors: Record<string, string> = {};
-    
+
     // Remove title and subtitle mandatory validation
     // Only validate order
     if (formData.order < 1) {
       errors.order = 'Order must be at least 1';
     }
-    
+
     // Only validate buttons if they exist and have content
     formData.buttons.forEach((button, index) => {
       // Only validate if the button has either label or link filled
@@ -151,7 +152,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
         }
       }
     });
-    
+
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -160,7 +161,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-    
+
     // Clear validation error for this field
     if (validationErrors[name]) {
       setValidationErrors(prev => {
@@ -186,7 +187,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
     const updatedButtons = [...formData.buttons];
     updatedButtons[index] = { ...updatedButtons[index], [field]: value };
     setFormData(prev => ({ ...prev, buttons: updatedButtons }));
-    
+
     // Clear validation error for this button field
     const errorKey = `button_${index}_${field}`;
     if (validationErrors[errorKey]) {
@@ -211,7 +212,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
     const updatedButtons = [...formData.buttons];
     updatedButtons.splice(index, 1);
     setFormData(prev => ({ ...prev, buttons: updatedButtons }));
-    
+
     // Clear any validation errors for all buttons since indices will shift
     setValidationErrors(prev => {
       const updated = { ...prev };
@@ -229,7 +230,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, fileType: 'backgroundImage' | 'media') => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      
+
       // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
         toast({
@@ -239,10 +240,10 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
         });
         return;
       }
-      
+
       // Create a preview URL
       const previewUrl = URL.createObjectURL(file);
-      
+
       if (fileType === 'backgroundImage') {
         setBackgroundImageFile(file);
         setBackgroundImagePreview(previewUrl);
@@ -260,36 +261,47 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
   const uploadFile = async (file: File): Promise<string> => {
     const MAX_RETRIES = 2;
     const TIMEOUT = 30000; // 30 seconds
-    
+
     let retries = 0;
-    
+
     while (retries <= MAX_RETRIES) {
       try {
+        // Convert image to WebP if it's an image
+        let fileToUpload = file;
+        if (file.type.startsWith('image/')) {
+          try {
+            const webpBlob = await convertToWebP(file);
+            fileToUpload = new File([webpBlob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
+          } catch (webpError) {
+            console.error('WebP conversion failed for hero media:', webpError);
+          }
+        }
+
         const formData = new FormData();
-        formData.append('file', file);
-        
+        formData.append('file', fileToUpload);
+
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
-        
+
         const response = await fetch('/api/admin/upload', {
           method: 'POST',
           body: formData,
           signal: controller.signal
         });
-        
+
         clearTimeout(timeoutId);
-        
+
         const data = await response.json();
-        
+
         if (!response.ok || !data.success) {
           throw new Error(data.message || 'File upload failed');
         }
-        
+
         return data.url;
       } catch (error: any) {
         retries++;
         console.error(`Error uploading file (attempt ${retries}/${MAX_RETRIES + 1}):`, error);
-        
+
         if (error.name === 'AbortError') {
           toast({
             title: "Upload Timeout",
@@ -308,9 +320,9 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
         }
       }
     }
-    
+
     // If all retries failed, return a fallback URL
-    return file.type.startsWith('image/') 
+    return file.type.startsWith('image/')
       ? `https://placehold.co/600x400?text=${encodeURIComponent(file.name.substring(0, 20))}`
       : 'https://sample-videos.com/zip/10/mp4/SampleVideo_360x240_1mb.mp4';
   };
@@ -318,7 +330,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validateForm()) {
       toast({
         title: "Validation Error",
@@ -327,22 +339,22 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
       });
       return;
     }
-    
+
     setSubmitting(true);
 
     try {
       // Upload files if selected
       let backgroundImageUrl = formData.backgroundImage;
       let mediaUrl = formData.mediaUrl;
-      
+
       if (backgroundImageFile) {
         backgroundImageUrl = await uploadFile(backgroundImageFile);
       }
-      
+
       if (mediaFile) {
         mediaUrl = await uploadFile(mediaFile);
       }
-      
+
       // Prepare payload
       const payload = {
         title: formData.title.trim(),
@@ -368,7 +380,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
       };
 
       let response;
-      
+
       if (mode === 'add') {
         response = await fetch('/api/admin/hero-sections', {
           method: 'POST',
@@ -382,7 +394,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
           body: JSON.stringify(payload)
         });
       }
-      
+
       const result = await response?.json();
 
       if (result?.success) {
@@ -390,7 +402,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
           title: "Success",
           description: result.message || `Hero section ${mode === 'add' ? 'created' : 'updated'} successfully`,
         });
-        
+
         router.push('/admin/dashboard/hero-sections');
       } else {
         toast({
@@ -414,7 +426,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
   // Function to get preview component based on selected pattern
   const getPatternPreview = () => {
     const selectedPattern = heroPatterns.find(p => p.value === formData.pattern);
-    
+
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
@@ -424,7 +436,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
             <p className="text-sm text-muted-foreground">{selectedPattern?.description}</p>
           </div>
         </div>
-        
+
         <div className="border rounded-lg p-4 bg-gradient-to-br from-gray-50 to-gray-100">
           {formData.pattern === 'dont-miss' && (
             <div className="bg-gray-900 text-white p-6 rounded-md">
@@ -435,10 +447,10 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                 </div>
                 {mediaPreview && (
                   <div className="w-32 h-32 bg-gray-800 rounded-md overflow-hidden">
-                    <Image 
-                      src={mediaPreview} 
-                      alt="Media preview" 
-                      width={128} 
+                    <Image
+                      src={mediaPreview}
+                      alt="Media preview"
+                      width={128}
                       height={128}
                       className="w-full h-full object-cover"
                     />
@@ -447,16 +459,16 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
               </div>
             </div>
           )}
-          
+
           {formData.pattern === 'brand-control' && (
             <div className="bg-white p-6 rounded-md border">
               <div className="flex flex-col md:flex-row items-center gap-6">
                 {mediaPreview && (
                   <div className="w-40 h-32 bg-gray-100 rounded-md overflow-hidden">
-                    <Image 
-                      src={mediaPreview} 
-                      alt="Media preview" 
-                      width={160} 
+                    <Image
+                      src={mediaPreview}
+                      alt="Media preview"
+                      width={160}
                       height={128}
                       className="w-full h-full object-cover"
                     />
@@ -469,7 +481,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
               </div>
             </div>
           )}
-          
+
           {formData.pattern === 'partner' && (
             <div className="bg-white p-6 rounded-md border">
               <div className="flex flex-col md:flex-row items-center gap-6">
@@ -486,10 +498,10 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                         </div>
                       </div>
                     ) : (
-                      <Image 
-                        src={mediaPreview} 
-                        alt="Media preview" 
-                        width={160} 
+                      <Image
+                        src={mediaPreview}
+                        alt="Media preview"
+                        width={160}
                         height={128}
                         className="w-full h-full object-cover"
                       />
@@ -499,9 +511,9 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
               </div>
             </div>
           )}
-          
+
           {formData.pattern === 'standard' && (
-            <div 
+            <div
               className="bg-gray-100 p-6 rounded-md relative overflow-hidden"
               style={{
                 backgroundImage: backgroundImagePreview ? `url(${backgroundImagePreview})` : undefined,
@@ -509,7 +521,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                 backgroundPosition: 'center',
               }}
             >
-              <div 
+              <div
                 className={`flex flex-col items-${formData.contentAlignment} text-${formData.contentAlignment} relative z-10 p-4 rounded`}
                 style={{
                   backgroundColor: backgroundImagePreview ? 'rgba(0,0,0,0.5)' : undefined,
@@ -524,7 +536,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                 </p>
                 <div className="flex gap-2 justify-center">
                   {formData.buttons.map((button, index) => (
-                    <span 
+                    <span
                       key={index}
                       className="px-4 py-1 text-xs rounded"
                       style={{
@@ -569,12 +581,12 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
             </div>
           </div>
           <CardDescription>
-            {mode === 'add' 
-              ? 'Create a new hero section to display on the website' 
+            {mode === 'add'
+              ? 'Create a new hero section to display on the website'
               : 'Modify this hero section\'s content and settings'}
           </CardDescription>
         </CardHeader>
-        
+
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-6">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -604,7 +616,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                         <p className="text-sm text-red-500">{validationErrors.title}</p>
                       )}
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label htmlFor="subtitle">Subtitle</Label>
                       <Textarea
@@ -620,7 +632,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                         <p className="text-sm text-red-500">{validationErrors.subtitle}</p>
                       )}
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label htmlFor="longDescription">Long Description</Label>
                       <Textarea
@@ -633,7 +645,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                       />
                     </div>
                   </div>
-                  
+
                   <div className="space-y-4">
                     <div className="flex items-center justify-between p-4 border rounded-lg">
                       <div className="space-y-0.5">
@@ -648,7 +660,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                         onCheckedChange={handleToggleActive}
                       />
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label htmlFor="order">Display Order *</Label>
                       <Input
@@ -668,7 +680,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                         Lower numbers appear higher on the page
                       </p>
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label htmlFor="layoutId">Layout ID</Label>
                       <Input
@@ -688,15 +700,15 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                 <div className="space-y-6">
                   <div>
                     <Label className="text-base font-semibold mb-4 block">Select Layout Pattern</Label>
-                    <RadioGroup 
-                      value={formData.pattern} 
+                    <RadioGroup
+                      value={formData.pattern}
                       onValueChange={(value) => handleSelectChange('pattern', value)}
                       className="grid grid-cols-1 md:grid-cols-2 gap-4"
                     >
                       {heroPatterns.map((pattern) => (
                         <div key={pattern.value} className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-muted/50">
                           <RadioGroupItem value={pattern.value} id={`pattern-${pattern.value}`} className="mt-1" />
-                          <Label 
+                          <Label
                             htmlFor={`pattern-${pattern.value}`}
                             className="flex flex-col cursor-pointer flex-1"
                           >
@@ -716,7 +728,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                   {formData.pattern === 'standard' && (
                     <div className="space-y-4">
                       <h4 className="font-semibold">Standard Pattern Options</h4>
-                      
+
                       <div className="space-y-2">
                         <Label>Content Alignment</Label>
                         <Select
@@ -796,7 +808,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                   {(formData.pattern === 'dont-miss' || formData.pattern === 'brand-control' || formData.pattern === 'partner') && (
                     <div className="space-y-4">
                       <h4 className="font-semibold">Media Options</h4>
-                      
+
                       <div className="space-y-2">
                         <Label>Media (Image or Video)</Label>
                         <div className="border rounded-md p-4">
@@ -863,13 +875,13 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                   )}
                 </div>
               </TabsContent>
-              
+
               {/* Styling Tab */}
               <TabsContent value="styling" className="space-y-6">
                 <div className="grid gap-6 md:grid-cols-2">
                   <div className="space-y-4">
                     <h4 className="font-semibold">Text Colors</h4>
-                    
+
                     <div className="space-y-2">
                       <Label htmlFor="titleColor">Title Color</Label>
                       <div className="flex gap-2">
@@ -889,7 +901,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                         />
                       </div>
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label htmlFor="descriptionColor">Description Color</Label>
                       <div className="flex gap-2">
@@ -910,10 +922,10 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="space-y-4">
                     <h4 className="font-semibold">Button Colors</h4>
-                    
+
                     <div className="space-y-2">
                       <Label htmlFor="buttonTextColor">Button Text Color</Label>
                       <div className="flex gap-2">
@@ -933,7 +945,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                         />
                       </div>
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label htmlFor="buttonBackgroundColor">Button Background Color</Label>
                       <div className="flex gap-2">
@@ -956,7 +968,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                   </div>
                 </div>
               </TabsContent>
-              
+
               {/* Buttons Tab */}
               <TabsContent value="buttons" className="space-y-6">
                 <div className="flex items-center justify-between">
@@ -977,7 +989,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                     Add Button
                   </Button>
                 </div>
-                
+
                 <div className="space-y-4">
                   {formData.buttons.length === 0 ? (
                     <div className="text-center py-8 border-2 border-dashed rounded-lg">
@@ -1007,7 +1019,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                             <MdDelete size={16} />
                           </Button>
                         </div>
-                        
+
                         <div className="grid gap-4 md:grid-cols-3">
                           <div className="space-y-2">
                             <Label htmlFor={`button-${index}-label`}>Button Text</Label>
@@ -1022,7 +1034,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                               <p className="text-sm text-red-500">{validationErrors[`button_${index}_label`]}</p>
                             )}
                           </div>
-                          
+
                           <div className="space-y-2">
                             <Label htmlFor={`button-${index}-link`}>Link URL</Label>
                             <Input
@@ -1036,7 +1048,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                               <p className="text-sm text-red-500">{validationErrors[`button_${index}_link`]}</p>
                             )}
                           </div>
-                          
+
                           <div className="space-y-2">
                             <Label htmlFor={`button-${index}-variant`}>Button Style</Label>
                             <Select
@@ -1056,14 +1068,14 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                             </Select>
                           </div>
                         </div>
-                        
+
                         {/* Button Preview */}
                         <div className="pt-2 border-t">
                           <Label className="text-sm text-muted-foreground">Preview:</Label>
                           <div className="mt-2">
-                            <Button 
+                            <Button
                               type="button"
-                              variant={button.variant as any || 'default'} 
+                              variant={button.variant as any || 'default'}
                               disabled
                               style={{
                                 backgroundColor: formData.buttonBackgroundColor || undefined,
@@ -1079,7 +1091,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                   )}
                 </div>
               </TabsContent>
-              
+
               {/* Preview Tab */}
               <TabsContent value="preview" className="space-y-6">
                 <div className="border rounded-lg p-6">
@@ -1089,7 +1101,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
                   </h3>
                   {getPatternPreview()}
                 </div>
-                
+
                 <div className="border rounded-lg p-6">
                   <h4 className="font-semibold mb-4">Content Summary</h4>
                   <div className="space-y-2 text-sm">
@@ -1104,7 +1116,7 @@ export default function HeroSectionForm({ initialData, mode }: HeroSectionFormPr
               </TabsContent>
             </Tabs>
           </CardContent>
-          
+
           <CardFooter className="flex justify-between border-t pt-6">
             <Button
               type="button"

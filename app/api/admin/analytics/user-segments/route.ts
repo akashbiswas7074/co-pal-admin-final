@@ -8,7 +8,7 @@ import { cookies } from 'next/headers';
 // Authentication check
 async function checkAuthentication() {
   let isAuthenticated = false;
-  
+
   try {
     const session = await getServerSession(authOptions);
     if (session && session.user) {
@@ -17,7 +17,7 @@ async function checkAuthentication() {
   } catch (error) {
     console.log("NextAuth session check failed:", error);
   }
-  
+
   if (!isAuthenticated) {
     const cookieStore = cookies();
     const adminId = cookieStore.get('adminId')?.value;
@@ -25,11 +25,11 @@ async function checkAuthentication() {
       isAuthenticated = true;
     }
   }
-  
+
   if (!isAuthenticated && process.env.NODE_ENV !== 'production') {
     isAuthenticated = true;
   }
-  
+
   return isAuthenticated;
 }
 
@@ -120,20 +120,20 @@ export async function GET(request: NextRequest) {
     }
 
     await connectToDatabase();
-    
+
     // For now, return mock data. In a real implementation, this would:
     // 1. Query the users collection to segment users based on behavior
     // 2. Calculate conversion rates from order data
     // 3. Analyze session data for engagement metrics
     // 4. Group users by device type, location, purchase history, etc.
-    
+
     const segments = generateMockUserSegments();
-    
+
     // Add real-time calculations if user data exists
     try {
       const User = mongoose.models.User || mongoose.model('User', new mongoose.Schema({}, { strict: false }));
       const totalUsers = await User.countDocuments();
-      
+
       if (totalUsers > 0) {
         // Adjust segment counts based on actual user data
         segments.forEach(segment => {
@@ -151,7 +151,7 @@ export async function GET(request: NextRequest) {
         totalSegments: segments.length,
         totalUsers: segments.reduce((sum, s) => sum + s.userCount, 0),
         avgConversionRate: (segments.reduce((sum, s) => sum + s.conversionRate, 0) / segments.length).toFixed(1),
-        topPerformingSegment: segments.reduce((prev, current) => 
+        topPerformingSegment: segments.reduce((prev, current) =>
           (prev.conversionRate > current.conversionRate) ? prev : current
         ).name
       }
@@ -174,10 +174,10 @@ export async function POST(request: NextRequest) {
     }
 
     await connectToDatabase();
-    
+
     const data = await request.json();
     const { name, description, criteria } = data;
-    
+
     if (!name || !criteria) {
       return NextResponse.json(
         { success: false, message: "Name and criteria are required" },
@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
     // 2. Save the custom segment definition
     // 3. Run the query to count matching users
     // 4. Store the segment for future use
-    
+
     const mockSegment = {
       id: new mongoose.Types.ObjectId().toString(),
       name,

@@ -17,11 +17,11 @@ import { Switch } from "@/components/ui/switch";
 import { Check, Loader2, Trash2, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Image from "next/image";
-import { 
-  createWebsiteLogo, 
-  deleteWebsiteLogo, 
-  getAllWebsiteLogos, 
-  setLogoAsActive 
+import {
+  createWebsiteLogo,
+  deleteWebsiteLogo,
+  getAllWebsiteLogos,
+  setLogoAsActive
 } from '@/lib/database/actions/website.logo.actions';
 import ImageUploader from '@/components/admin/ImageUploader';
 
@@ -32,6 +32,7 @@ interface WebsiteLogo {
   altText: string;
   isActive: boolean;
   mobileLogoUrl?: string;
+  authBackgroundUrl?: string;
 }
 
 export default function WebsiteLogosPage() {
@@ -44,6 +45,7 @@ export default function WebsiteLogosPage() {
     logoUrl: '',
     altText: '',
     mobileLogoUrl: '',
+    authBackgroundUrl: '',
     isActive: false,
   });
 
@@ -53,7 +55,7 @@ export default function WebsiteLogosPage() {
       try {
         setIsLoading(true);
         const result = await getAllWebsiteLogos();
-        
+
         if (result.success) {
           setLogos(result.logos);
         } else {
@@ -103,10 +105,18 @@ export default function WebsiteLogosPage() {
     });
   };
 
+  // Handle auth background image upload
+  const handleAuthBackgroundUpload = (url: string) => {
+    setFormData({
+      ...formData,
+      authBackgroundUrl: url,
+    });
+  };
+
   // Handle form submission to create a new logo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validate required fields
     if (!formData.name || !formData.logoUrl || !formData.altText) {
       toast({
@@ -116,35 +126,36 @@ export default function WebsiteLogosPage() {
       });
       return;
     }
-    
+
     setIsSubmitting(true);
-    
+
     try {
       const result = await createWebsiteLogo(formData);
-      
+
       if (result.success) {
         toast({
           title: "Success",
           description: result.message || "Logo created successfully",
         });
-        
+
         // Reset form and reload logos
         setFormData({
           name: '',
           logoUrl: '',
           altText: '',
           mobileLogoUrl: '',
+          authBackgroundUrl: '',
           isActive: false,
         });
-        
+
         // Add the new logo to the list
         if (result.logo) {
           setLogos([result.logo, ...logos]);
         }
-        
+
         // If the new logo is active, update the active state for all logos
         if (formData.isActive && result.logo) {
-          setLogos(prevLogos => 
+          setLogos(prevLogos =>
             prevLogos.map(logo => ({
               ...logo,
               isActive: logo._id === result.logo._id,
@@ -174,13 +185,13 @@ export default function WebsiteLogosPage() {
   const handleSetActive = async (id: string) => {
     try {
       const result = await setLogoAsActive(id);
-      
+
       if (result.success) {
         toast({
           title: "Success",
           description: result.message || "Logo set as active successfully",
         });
-        
+
         // Update logos in the state
         setLogos(logos.map(logo => ({
           ...logo,
@@ -208,16 +219,16 @@ export default function WebsiteLogosPage() {
     if (!window.confirm("Are you sure you want to delete this logo?")) {
       return;
     }
-    
+
     try {
       const result = await deleteWebsiteLogo(id);
-      
+
       if (result.success) {
         toast({
           title: "Success",
           description: result.message || "Logo deleted successfully",
         });
-        
+
         // Remove the deleted logo from the state
         setLogos(logos.filter(logo => logo._id !== id));
       } else {
@@ -240,13 +251,13 @@ export default function WebsiteLogosPage() {
   return (
     <div className="container mx-auto py-8">
       <h1 className="text-3xl font-bold mb-6">Website Logo Management</h1>
-      
+
       <Tabs defaultValue="existing">
         <TabsList className="mb-6">
           <TabsTrigger value="existing">Existing Logos</TabsTrigger>
           <TabsTrigger value="add-new">Add New Logo</TabsTrigger>
         </TabsList>
-        
+
         <TabsContent value="existing">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {isLoading ? (
@@ -271,24 +282,24 @@ export default function WebsiteLogosPage() {
                     </CardTitle>
                     <CardDescription>{logo.altText}</CardDescription>
                   </CardHeader>
-                  
+
                   <CardContent className="space-y-4 pt-0">
                     <p className="text-xs font-medium text-gray-500 mb-2">Logo:</p>
                     <div className="relative h-20 w-full">
-                      <Image 
-                        src={logo.logoUrl} 
+                      <Image
+                        src={logo.logoUrl}
                         alt={logo.altText}
                         className="object-contain"
                         fill
                       />
                     </div>
-                    
+
                     {logo.mobileLogoUrl && (
                       <div className="mt-4">
                         <p className="text-xs font-medium text-gray-500 mb-2">Mobile Logo:</p>
                         <div className="relative h-16 w-full">
-                          <Image 
-                            src={logo.mobileLogoUrl} 
+                          <Image
+                            src={logo.mobileLogoUrl}
                             alt={`Mobile version of ${logo.altText}`}
                             className="object-contain"
                             fill
@@ -297,11 +308,11 @@ export default function WebsiteLogosPage() {
                       </div>
                     )}
                   </CardContent>
-                  
+
                   <CardFooter className="pt-4 flex justify-between">
                     {!logo.isActive && (
                       <Button
-                        variant="outline" 
+                        variant="outline"
                         size="sm"
                         onClick={() => handleSetActive(logo._id)}
                         className="mr-2 flex-1"
@@ -311,7 +322,7 @@ export default function WebsiteLogosPage() {
                       </Button>
                     )}
                     <Button
-                      variant="destructive" 
+                      variant="destructive"
                       size="sm"
                       onClick={() => handleDelete(logo._id)}
                       className={`${!logo.isActive ? 'flex-1' : 'w-full'}`}
@@ -325,7 +336,7 @@ export default function WebsiteLogosPage() {
             )}
           </div>
         </TabsContent>
-        
+
         <TabsContent value="add-new">
           <Card>
             <form onSubmit={handleSubmit}>
@@ -360,7 +371,7 @@ export default function WebsiteLogosPage() {
                     />
                   </div>
                 </div>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Main Logo Upload */}
                   <ImageUploader
@@ -369,27 +380,37 @@ export default function WebsiteLogosPage() {
                     existingImageUrl={formData.logoUrl}
                     onUploadComplete={handleLogoUpload}
                   />
-                  
+
                   {/* Mobile Logo Upload (Optional) */}
-                  <ImageUploader
-                    label="Mobile Logo (Optional)"
-                    helpText="Optional logo for mobile devices"
-                    existingImageUrl={formData.mobileLogoUrl}
-                    onUploadComplete={handleMobileLogoUpload}
-                  />
+                  <div className="space-y-4">
+                    <ImageUploader
+                      label="Mobile Logo (Optional)"
+                      helpText="Optional logo for mobile devices"
+                      existingImageUrl={formData.mobileLogoUrl}
+                      onUploadComplete={handleMobileLogoUpload}
+                    />
+
+                    {/* Auth Background Upload (Optional) */}
+                    <ImageUploader
+                      label="Auth Page Background (Optional)"
+                      helpText="Background image for Sign In / Sign Up pages"
+                      existingImageUrl={formData.authBackgroundUrl}
+                      onUploadComplete={handleAuthBackgroundUpload}
+                    />
+                  </div>
                 </div>
-                
+
                 <div className="flex items-center space-x-2">
-                  <Switch 
-                    id="isActive" 
+                  <Switch
+                    id="isActive"
                     name="isActive"
-                    checked={formData.isActive} 
-                    onCheckedChange={(checked) => setFormData({...formData, isActive: checked})}
+                    checked={formData.isActive}
+                    onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
                   />
                   <Label htmlFor="isActive">Set as active logo</Label>
                 </div>
               </CardContent>
-              
+
               <CardFooter>
                 <Button type="submit" disabled={isSubmitting || !formData.logoUrl}>
                   {isSubmitting ? (

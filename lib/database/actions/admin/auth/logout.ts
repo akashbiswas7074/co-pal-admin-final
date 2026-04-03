@@ -17,8 +17,9 @@ export const logout = async () => {
 
 export async function logoutAdmin() {
   // Clear the adminId cookie
-  cookies().delete("adminId");
-  cookies().delete("adminToken");
+  const cookieStore = await cookies();
+  cookieStore.delete("adminId");
+  cookieStore.delete("adminToken");
 
   // Redirect to login page
   redirect("/admin/login");

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
-import { Button, Group, Text, TextInput, Select, Switch, Paper, Stack, ActionIcon } from "@mantine/core";
+import { Button, Group, Text, TextInput, Select, Switch, Paper, Stack, ActionIcon, Box, FileInput, SimpleGrid, Image } from "@mantine/core";
 import { AiFillDelete, AiTwotoneEdit } from "react-icons/ai";
 import { IoPencil, IoTrash, IoAdd } from "react-icons/io5";
 import { modals } from "@mantine/modals";
@@ -10,6 +10,14 @@ import {
   updateSubCategory,
 } from "@/lib/database/actions/admin/subCategories/subcategories.actions";
 import { getTagsBySubCategory, createTag, updateTag, deleteTag } from "@/lib/database/actions/admin/tags/tags.actions";
+
+const fletobase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+  });
 
 const SubCategoryListItem = ({
   subCategory,
@@ -23,6 +31,7 @@ const SubCategoryListItem = ({
   const [open, setOpen] = useState<boolean>(false);
   const [name, setName] = useState("");
   const [parent, setParent] = useState("");
+  const [images, setImages] = useState<any[]>(subCategory.images || []);
   const [tags, setTags] = useState<any[]>([]);
   const [loadingTags, setLoadingTags] = useState<boolean>(false);
   const [showTags, setShowTags] = useState<boolean>(false);
@@ -32,8 +41,15 @@ const SubCategoryListItem = ({
   const [editTagName, setEditTagName] = useState("");
   const [editTagMandatory, setEditTagMandatory] = useState(false);
 
+  const [uploading, setUploading] = useState(false);
+
   const input = useRef<any>(null);
   const router = useRouter();
+
+  const handleImageChange = async (files: File[]) => {
+    const base64Images = await Promise.all(files.map(fletobase64));
+    setImages((prev) => [...prev, ...base64Images]);
+  };
 
   // Fetch tags for this sub-category
   useEffect(() => {
@@ -70,11 +86,13 @@ const SubCategoryListItem = ({
   };
   const handleUpdateSubCategory = async (subCategoryId: string) => {
     try {
-      const updatedParent = parent ? parent : null;
+      setUploading(true);
+      const updatedParent = parent ? parent : subCategory?.parent?._id || null;
       await updateSubCategory(
         subCategoryId,
         name || subCategory.name.toString(),
-        updatedParent
+        updatedParent,
+        images
       )
         .then((res) => {
           if (res?.success) {
@@ -82,12 +100,17 @@ const SubCategoryListItem = ({
             setOpen(false);
             setName("");
             setParent("");
+            setUploading(false);
             router.refresh();
           }
         })
-        .catch((err) => alert(err));
+        .catch((err) => {
+          alert(err);
+          setUploading(false);
+        });
     } catch (error: any) {
       alert(error);
+      setUploading(false);
     }
   };
 
@@ -188,81 +211,129 @@ const SubCategoryListItem = ({
 
   return (
     <div>
-      <li className="flex p-[10px] bg-blue-400 mt-[10px] text-whit font-bold items-center justify-between">
-        <TextInput
-          value={name ? name : subCategory.name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={!open}
-          ref={input}
-          className={
-            open ? "bg-white !text-black" : "text-white bg-transparent"
-          }
-        />
-        {open && (
-          <Group>
-            <select
-              name="parent"
-              value={parent || subCategory?.parent?._id}
-              onChange={(e: any) => setParent(e.target.value)}
-              disabled={!open}
-              className="text-black h-[55px] pl-[1rem] outline-none"
-            >
-              {categories.map((c: any) => (
-                <option value={c._id} key={c._id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <Button onClick={() => handleUpdateSubCategory(subCategory._id)}>
-              Save
-            </Button>
-            <Button
-              color="red"
-              onClick={() => {
-                setOpen(false);
-                setName("");
-                setParent("");
-              }}
-            >
-              Cancel
-            </Button>
-          </Group>
-        )}
-        <div className="flex">
-          {!open && (
-            <AiTwotoneEdit
+      <li className="flex flex-col p-[10px] bg-blue-400 mt-[10px] text-white font-bold">
+        <div className="flex items-center justify-between w-full">
+          <TextInput
+            value={name ? name : subCategory.name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={!open}
+            ref={input}
+            className={
+              open ? "bg-white !text-black flex-1" : "text-white bg-transparent flex-1"
+            }
+          />
+          {open && (
+            <Group ml="md">
+              <select
+                name="parent"
+                value={parent || subCategory?.parent?._id}
+                onChange={(e: any) => setParent(e.target.value)}
+                disabled={!open}
+                className="text-black h-[35px] pl-[0.5rem] outline-none rounded"
+              >
+                {categories.map((c: any) => (
+                  <option value={c._id} key={c._id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                onClick={() => handleUpdateSubCategory(subCategory._id)}
+                loading={uploading}
+              >
+                Save
+              </Button>
+              <Button
+                color="red"
+                onClick={() => {
+                  setOpen(false);
+                  setName("");
+                  setParent("");
+                  setImages(subCategory.images || []);
+                }}
+              >
+                Cancel
+              </Button>
+            </Group>
+          )}
+          <div className="flex">
+            {!open && (
+              <AiTwotoneEdit
+                className="w-[22px] h-[22px] cursor-pointer ml-[1rem]"
+                onClick={() => {
+                  setOpen((prev) => !prev);
+                  setName(subCategory.name);
+                  setParent(subCategory?.parent?._id || "");
+                  input?.current?.focus();
+                }}
+              />
+            )}
+            <AiFillDelete
               className="w-[22px] h-[22px] cursor-pointer ml-[1rem]"
               onClick={() => {
-                setOpen((prev) => !prev);
-                setName(subCategory.name);
-                setParent(subCategory?.parent?._id || "");
-                input?.current?.focus();
+                modals.openConfirmModal({
+                  title: "Delete Sub category",
+                  centered: true,
+                  children: (
+                    <Text size="sm">
+                      Are you sure you want to delete Sub category? This action is
+                      irreversible.
+                    </Text>
+                  ),
+                  labels: {
+                    confirm: "Delete Sub Category",
+                    cancel: "No don't delete it",
+                  },
+                  confirmProps: { color: "red" },
+                  onCancel: () => console.log("Cancel"),
+                  onConfirm: () => handleRemoveSubCategory(subCategory._id),
+                });
               }}
             />
-          )}
-          <AiFillDelete
-            className="w-[22px] h-[22px] cursor-pointer ml-[1rem]"
-            onClick={() => {
-              modals.openConfirmModal({
-                title: "Delete Sub category",
-                centered: true,
-                children: (
-                  <Text size="sm">
-                    Are you sure you want to delete Sub category? This action is
-                    irreversible.
-                  </Text>
-                ),
-                labels: {
-                  confirm: "Delete Sub Category",
-                  cancel: "No don't delete it",
-                },
-                confirmProps: { color: "red" },
-                onCancel: () => console.log("Cancel"),
-                onConfirm: () => handleRemoveSubCategory(subCategory._id),
-              });
-            }}
-          />
+          </div>
         </div>
+
+        {open && (
+          <Box mt="md" p="sm" style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '4px' }}>
+            <FileInput
+              label="Add New Images"
+              placeholder="Choose files"
+              multiple
+              accept="image/*"
+              onChange={(files) => handleImageChange(files)}
+              className="mb-4"
+              styles={{ label: { color: 'white' } }}
+            />
+
+            <SimpleGrid cols={4} spacing="xs">
+              {images.map((img, index) => (
+                <Box key={index} pos="relative">
+                  <Image
+                    src={typeof img === 'string' ? img : img.url}
+                    alt={`Preview ${index}`}
+                    width="100%"
+                    height={80}
+                    fit="cover"
+                    radius="sm"
+                  />
+                  <Button
+                    color="red"
+                    size="xs"
+                    pos="absolute"
+                    top={2}
+                    right={2}
+                    onClick={() =>
+                      setImages((prev) => prev.filter((_, i) => i !== index))
+                    }
+                    style={{ padding: 0, width: 16, height: 16, borderRadius: 8, minWidth: 0 }}
+                  >
+                    &times;
+                  </Button>
+                </Box>
+              ))}
+            </SimpleGrid>
+          </Box>
+        )}
       </li>
 
       {/* Tags Section */}

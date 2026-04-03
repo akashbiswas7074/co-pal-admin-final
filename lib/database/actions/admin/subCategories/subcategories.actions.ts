@@ -152,15 +152,72 @@ export const deleteSubCategory = async (id: string) => {
 export const updateSubCategory = async (
   id: string,
   name: string,
-  parent: string | null
+  parent: string | null,
+  images: any[]
 ) => {
   try {
     await connectToDatabase();
+    const existingSubCategory = await SubCategory.findById(id);
+    if (!existingSubCategory) {
+      return {
+        success: false,
+        message: "Sub Category not found with this Id!",
+      };
+    }
+
+    // Handle Image Updates
+    const existingImages = existingSubCategory.images || [];
+
+    // 1. Identify images to remove (those in existing but not in new)
+    const imagesToKeep = images.filter((img: any) => img.public_id);
+    const imagesToRemove = existingImages.filter(
+      (exImg: any) =>
+        !imagesToKeep.some((keepImg: any) => keepImg.public_id === exImg.public_id)
+    );
+
+    // 2. Delete removed images from Cloudinary
+    const deletePromises = imagesToRemove.map((img: any) =>
+      cloudinary.v2.uploader.destroy(img.public_id)
+    );
+    await Promise.all(deletePromises);
+
+    // 3. Upload new images (base64 strings)
+    const newBase64Images = images.filter((img: any) => typeof img === "string");
+    const uploadPromises = newBase64Images.map(async (base64Image: string) => {
+      const buffer = base64ToBuffer(base64Image);
+      const formData = new FormData();
+      formData.append("file", new Blob([buffer], { type: "image/jpeg" }));
+      formData.append("upload_preset", "website");
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_NAME}/image/upload`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+      const resData = await response.json();
+      return {
+        url: resData.secure_url,
+        public_id: resData.public_id,
+      };
+    });
+    const uploadedImages = await Promise.all(uploadPromises);
+
+    // 4. Combine kept and new images
+    const updatedImagesList = [...imagesToKeep, ...uploadedImages];
+
     const updatedParent: mongoose.Types.ObjectId | null =
       parent && mongoose.Types.ObjectId.isValid(parent)
         ? new mongoose.Types.ObjectId(parent)
         : null;
-    await SubCategory.findByIdAndUpdate(id, { name, parent: updatedParent });
+
+    await SubCategory.findByIdAndUpdate(id, {
+      name,
+      parent: updatedParent,
+      slug: slugify(name),
+      images: updatedImagesList,
+    });
+
     const subCategories = await SubCategory.find().sort({ updatedAt: -1 });
 
     return {

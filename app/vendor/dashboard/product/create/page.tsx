@@ -22,6 +22,10 @@ import { getTagsBySubCategory, getTagsByCategory } from "@/lib/database/actions/
 
 // Import RichTextEditor component
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { convertToWebP } from "@/lib/image-utils";
+import { analyzeProductImage } from "@/lib/ai-service";
+import { Sparkles, Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 // Define types
 interface FormValues {
@@ -42,6 +46,7 @@ interface FormValues {
   shippingFee: string;
   details: Array<{ name: string; value: string }>;
   tagValues: Array<{ tagId: string; value: string }>;
+  brand: string;
 }
 
 const PreviewContent = ({ content, mode, onClose }: { content: string; mode: 'desktop' | 'mobile'; onClose: () => void }) => {
@@ -71,6 +76,7 @@ const PreviewContent = ({ content, mode, onClose }: { content: string; mode: 'de
 };
 
 const CreateProductPage = () => {
+  const { toast } = useToast();
   const [images, setImages] = useState<string[]>([]);
   const [parents, setParents] = useState<{ _id: string; name: string }[]>([]);
   const [categories, setCategories] = useState<{ _id: string; name: string }[]>([]);
@@ -78,6 +84,7 @@ const CreateProductPage = () => {
   const [tags, setTags] = useState<any[]>([]);
   const [loadingTags, setLoadingTags] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [featuredCheck, setFeaturedCheck] = useState<boolean>(false);
   const editor = useRef(null);
   const [activeTab, setActiveTab] = useState("basic");
@@ -101,7 +108,60 @@ const CreateProductPage = () => {
     shippingFee: "",
     details: [{ name: "", value: "" }],
     tagValues: [],
+    brand: "",
   });
+
+  const handleAIAnalysis = async () => {
+    if (formValues.imageFiles.length === 0) {
+      toast({
+        title: "No Images",
+        description: "Please upload a product image to analyze.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const result = await analyzeProductImage(formValues.imageFiles[0]);
+      if (result) {
+        setFormValues((prev) => ({
+          ...prev,
+          name: result.name || prev.name,
+          description: result.description || prev.description,
+          longDescription: result.longDescription || prev.longDescription,
+          sku: result.sku || prev.sku,
+          brand: result.brand || prev.brand,
+          discount: result.discount ? (parseInt(result.discount.toString().replace(/[^0-9]/g, '')) || 0) : prev.discount,
+          benefits: (result.benefits || []).map(b => ({ name: b })),
+          ingredients: (result.ingredients || []).map(i => ({ name: i })),
+          details: result.details ? Object.entries(result.details).map(([name, value]) => ({ name, value: value as string })) : prev.details,
+          sizes: (result.potential_sizes || []).map(s => ({ size: s, qty: "10", price: result.price ? result.price.toString().replace(/[^0-9.]/g, '') : "0" })),
+          questions: (result.questions || []).map(q => ({ question: q.question, answer: q.answer })),
+        }));
+
+        toast({
+          title: "Analysis Complete",
+          description: "Product details have been populated from the image.",
+        });
+      } else {
+        toast({
+          title: "Analysis Failed",
+          description: "Could not analyze the image. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("AI analysis failed:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred during AI analysis.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   const [formErrors, setFormErrors] = useState<any>({});
 
@@ -361,8 +421,19 @@ const CreateProductPage = () => {
 
       // Upload new images via API route
       for (let i = 0; i < formValues.imageFiles.length; i++) {
+        const file = formValues.imageFiles[i];
+
+        // Convert to WebP
+        let fileToUpload = file;
+        try {
+          const webpBlob = await convertToWebP(file);
+          fileToUpload = new File([webpBlob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
+        } catch (e) {
+          console.error('WebP conversion failed for product image:', e);
+        }
+
         const formData = new FormData();
-        formData.append("file", formValues.imageFiles[i]);
+        formData.append("file", fileToUpload);
         formData.append("upload_preset", "website"); // Send preset to API route
         try {
           // Call the internal API route
@@ -417,13 +488,12 @@ const CreateProductPage = () => {
       try {
         await createProduct(
           formValues.sku,
-          uploaded_images,
+          uploaded_images as [],
           formValues.sizes,
           formValues.discount,
           formValues.name,
           formValues.description,
           formValues.longDescription,
-          "", // brand - removed from UI
           formValues.details,
           formValues.questions,
           formValues.category,
@@ -435,7 +505,7 @@ const CreateProductPage = () => {
           undefined, // price
           undefined, // qty
           undefined, // stock
-          formValues.tagValues // tagValues
+          formValues.tagValues
         ).then((res) => {
           if (res.success) {
             setLoading(false);
@@ -458,6 +528,8 @@ const CreateProductPage = () => {
               shippingFee: "",
               details: [{ name: "", value: "" }],
               tagValues: [],
+              brand: "",
+              shippingDimensions: { length: "", breadth: "", height: "", weight: "" },
             });
             setImages([]);
             alert(res.message || "Product created Successfully");
@@ -1311,6 +1383,23 @@ const CreateProductPage = () => {
                       <Label htmlFor="images">
                         Product Images <span className="text-red-500">*</span>
                       </Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAIAnalysis}
+                        disabled={isAnalyzing || formValues.imageFiles.length === 0}
+                        className="h-8 flex items-center gap-2 border-primary/20 hover:bg-primary/5 hover:border-primary/50 transition-all duration-300"
+                      >
+                        {isAnalyzing ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        ) : (
+                          <Sparkles className="h-4 w-4 text-primary" />
+                        )}
+                        <span className={isAnalyzing ? "animate-pulse" : ""}>
+                          {isAnalyzing ? "Analyzing..." : "Analyze with AI"}
+                        </span>
+                      </Button>
                     </div>
 
 

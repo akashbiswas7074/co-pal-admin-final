@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { convertToWebP } from "@/lib/image-utils";
 
 export default function BannerUploadForm() {
   const { toast } = useToast();
@@ -68,20 +69,29 @@ export default function BannerUploadForm() {
     setIsUploading(true);
 
     try {
-      // Convert images to base64
+      // Convert images to WebP and then to base64
       const dataUrls = await Promise.all(
-        imagePreviews.map((preview) => {
+        imagePreviews.map(async (preview) => {
+          let fileToProcess = preview.file;
+          try {
+            const webpBlob = await convertToWebP(preview.file);
+            fileToProcess = new File([webpBlob], preview.file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
+          } catch (e) {
+            console.error('WebP conversion failed for banner:', e);
+            // Fallback to original file
+          }
+
           return new Promise<{ data: string; type: string }>(
             (resolve, reject) => {
               const reader = new FileReader();
               reader.onload = () => {
                 resolve({
                   data: reader.result as string,
-                  type: preview.file.type,
+                  type: fileToProcess.type,
                 });
               };
               reader.onerror = reject;
-              reader.readAsDataURL(preview.file);
+              reader.readAsDataURL(fileToProcess);
             }
           );
         })

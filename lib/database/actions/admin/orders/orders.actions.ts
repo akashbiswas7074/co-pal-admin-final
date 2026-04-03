@@ -4,6 +4,7 @@ import { connectToDatabase } from "@/lib/database/connect";
 import Order from "@/lib/database/models/order.model";
 import Product from "@/lib/database/models/product.model";
 import User from "@/lib/database/models/user.model";
+import Sample from "@/lib/database/models/sample.model";
 import { sendOrderStatusUpdateEmail, sendOrderConfirmationEmail } from "@/lib/email"; // Removed non-existent email functions
 import { mapWebsiteStatusToAdmin, mapAdminStatusToWebsite } from "@/lib/order-status-utils"; // Added mapAdminStatusToWebsite
 import mongoose from "mongoose";
@@ -256,30 +257,34 @@ export const updateProductOrderStatus = async (
 
     if (status.toString() === "Completed" && oldStatus !== "Completed") {
       try {
-        const mainProduct = await Product.findById(itemToUpdate.product);
-        if (mainProduct) {
-          const subProduct = mainProduct.subProducts[0]; // Assuming one subProduct for simplicity
-          const sizeInfo = subProduct.sizes.find(
-            (s: any) => s.size === itemToUpdate.size
-          );
-          
-          if (sizeInfo) {
-            if (
-              typeof sizeInfo.qty !== "number" ||
-              typeof sizeInfo.sold !== "number"
-            ) {
-              // Initialize if not number
-              sizeInfo.qty = Number(sizeInfo.qty) || 0;
-              sizeInfo.sold = Number(sizeInfo.sold) || 0;
-            }
-            if (typeof itemToUpdate.qty !== "number") {
-              itemToUpdate.qty = Number(itemToUpdate.qty) || 0;
-            }
+        if (!itemToUpdate.product) {
+          console.log(`[updateProductOrderStatus] Skipping stock update for item without product ID (likely a sample): ${itemToUpdate.name}`);
+        } else {
+          const mainProduct = await Product.findById(itemToUpdate.product);
+          if (mainProduct) {
+            const subProduct = mainProduct.subProducts[0]; // Assuming one subProduct for simplicity
+            const sizeInfo = subProduct.sizes.find(
+              (s: any) => s.size === itemToUpdate.size
+            );
             
-            sizeInfo.qty -= itemToUpdate.qty;
-            subProduct.sold = (Number(subProduct.sold) || 0) + itemToUpdate.qty; // Increment by item qty
-            sizeInfo.sold = (Number(sizeInfo.sold) || 0) + itemToUpdate.qty; // Increment by item qty
-            await mainProduct.save();
+            if (sizeInfo) {
+              if (
+                typeof sizeInfo.qty !== "number" ||
+                typeof sizeInfo.sold !== "number"
+              ) {
+                // Initialize if not number
+                sizeInfo.qty = Number(sizeInfo.qty) || 0;
+                sizeInfo.sold = Number(sizeInfo.sold) || 0;
+              }
+              if (typeof itemToUpdate.qty !== "number") {
+                itemToUpdate.qty = Number(itemToUpdate.qty) || 0;
+              }
+              
+              sizeInfo.qty -= itemToUpdate.qty;
+              subProduct.sold = (Number(subProduct.sold) || 0) + itemToUpdate.qty; // Increment by item qty
+              sizeInfo.sold = (Number(sizeInfo.sold) || 0) + itemToUpdate.qty; // Increment by item qty
+              await mainProduct.save();
+            }
           }
         }
       } catch (error) {
@@ -291,9 +296,15 @@ export const updateProductOrderStatus = async (
     
     // Save the order with the updated item status    // Ensure corresponding entry in other array is also updated with the same status
     if (itemPath === 'products' && order.orderItems && order.orderItems.length > 0) {
-      const matchingOrderItem = order.orderItems.find(
-        (item: any) => String(item.product) === String(itemToUpdate.product)
-      );
+      const matchingOrderItem = order.orderItems.find((item: any) => {
+        if (itemToUpdate.product && item.product) {
+          return String(item.product) === String(itemToUpdate.product);
+        }
+        if (itemToUpdate.sample && item.sample) {
+          return String(item.sample) === String(itemToUpdate.sample);
+        }
+        return item.name === itemToUpdate.name;
+      });
       
       if (matchingOrderItem && matchingOrderItem.status !== status) {
         console.log(`[updateProductOrderStatus] Sync status to orderItems: ${matchingOrderItem.status} -> ${status}`);
@@ -309,9 +320,15 @@ export const updateProductOrderStatus = async (
         order.markModified('orderItems');
       }
     } else if (itemPath === 'orderItems' && order.products && order.products.length > 0) {
-      const matchingProduct = order.products.find(
-        (prod: any) => String(prod.product) === String(itemToUpdate.product)
-      );
+      const matchingProduct = order.products.find((prod: any) => {
+        if (itemToUpdate.product && prod.product) {
+          return String(prod.product) === String(itemToUpdate.product);
+        }
+        if (itemToUpdate.sample && prod.sample) {
+          return String(prod.sample) === String(itemToUpdate.sample);
+        }
+        return prod.name === itemToUpdate.name;
+      });
       
       if (matchingProduct && matchingProduct.status !== status) {
         console.log(`[updateProductOrderStatus] Sync status to products: ${matchingProduct.status} -> ${status}`);
@@ -708,9 +725,17 @@ export const getOrderDetailsById = async (orderId: string) => {
         select: "name images slug price vendor vendorId shippingDimensions description longDescription brand category subCategories details benefits ingredients rating numReviews featured", // Added all product details including shippingDimensions
       })
       .populate({
+        path: "orderItems.sample", // Populate sample details
+        model: Sample,
+      })
+      .populate({
         path: "products.product", // If you have a products array with product refs
         model: Product,
         select: "name images slug price vendor vendorId shippingDimensions description longDescription brand category subCategories details benefits ingredients rating numReviews featured", // Added all product details including shippingDimensions
+      })
+      .populate({
+        path: "products.sample", // Populate sample details
+        model: Sample,
       })
       .populate({
         // Add populate for vendorId to get vendor details

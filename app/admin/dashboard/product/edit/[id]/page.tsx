@@ -37,6 +37,10 @@ import { getTagsBySubCategory, getTagsByCategory } from "@/lib/database/actions/
 
 // Import RichTextEditor component
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { convertToWebP } from "@/lib/image-utils";
+import { analyzeProductImage } from "@/lib/ai-service";
+import { Sparkles, Loader2 } from "lucide-react";
+
 import { joditConfig } from "@/components/ui/rich-text-editor";
 
 const PreviewContent = ({ content, mode, onClose }: { content: string; mode: 'desktop' | 'mobile'; onClose: () => void }) => {
@@ -79,6 +83,7 @@ const EditProductPage = () => {
   const [tags, setTags] = useState<any[]>([]);
   const [loadingTags, setLoadingTags] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [featuredCheck, setFeaturedCheck] = useState<boolean>(false);
   const editor = useRef(null);
   const longDescriptionRef = useRef<string>(''); // Ref to store description without triggering re-renders
@@ -622,10 +627,23 @@ const EditProductPage = () => {
         if (formValues.imageFiles.length > 0) {
           const array = [];
 
-          // Upload images via API route
+          // Upload new images via API route
           for (let i = 0; i < formValues.imageFiles.length; i++) {
+            const file = formValues.imageFiles[i];
+
+            // Convert to WebP if it's a file
+            let fileToUpload = file;
+            if (file instanceof File) {
+              try {
+                const webpBlob = await convertToWebP(file);
+                fileToUpload = new File([webpBlob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
+              } catch (e) {
+                console.error('WebP conversion failed for product image:', e);
+              }
+            }
+
             const formData = new FormData();
-            formData.append("file", formValues.imageFiles[i]);
+            formData.append("file", fileToUpload);
             formData.append("upload_preset", "website"); // Send preset to API route
             try {
               // Call the internal API route
@@ -736,6 +754,69 @@ const EditProductPage = () => {
     };
 
     await updateProductHandler();
+  };
+
+  const handleAIAnalysis = async () => {
+    // Check for new upload or existing image
+    const imageToAnalyze = formValues.imageFiles.length > 0
+      ? formValues.imageFiles[0]
+      : null;
+
+    if (!imageToAnalyze) {
+      toast({
+        title: "No New Images",
+        description: "Please upload a new product image to analyze.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const result = await analyzeProductImage(imageToAnalyze);
+      if (result) {
+        setFormValues((prev: any) => ({
+          ...prev,
+          name: result.name || prev.name,
+          description: result.description || prev.description,
+          longDescription: result.longDescription || prev.longDescription,
+          sku: result.sku || prev.sku,
+          brand: result.brand || prev.brand,
+          discount: result.discount ? (parseInt(result.discount.toString().replace(/[^0-9]/g, '')) || 0) : prev.discount,
+          benefits: (result.benefits || []).map(b => ({ name: b })),
+          ingredients: (result.ingredients || []).map(i => ({ name: i })),
+          details: result.details ? Object.entries(result.details).map(([name, value]) => ({ name, value: value as string })) : prev.details,
+          sizes: (result.potential_sizes || []).map(s => ({ size: s, qty: "10", price: result.price ? result.price.toString().replace(/[^0-9.]/g, '') : "0" })),
+          shippingDimensions: {
+            length: result.shippingDimensions?.length ? result.shippingDimensions.length.toString().replace(/[^0-9.]/g, '') : prev.shippingDimensions.length,
+            breadth: result.shippingDimensions?.breadth ? result.shippingDimensions.breadth.toString().replace(/[^0-9.]/g, '') : prev.shippingDimensions.breadth,
+            height: result.shippingDimensions?.height ? result.shippingDimensions.height.toString().replace(/[^0-9.]/g, '') : prev.shippingDimensions.height,
+            weight: result.shippingDimensions?.weight ? result.shippingDimensions.weight.toString().replace(/[^0-9.]/g, '') : prev.shippingDimensions.weight,
+          },
+          questions: (result.questions || []).map(q => ({ question: q.question, answer: q.answer })),
+        }));
+
+        toast({
+          title: "Analysis Complete",
+          description: "Product details have been populated from the image.",
+        });
+      } else {
+        toast({
+          title: "Analysis Failed",
+          description: "Could not analyze the image. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("AI analysis failed:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred during AI analysis.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   useEffect(() => {
@@ -1669,6 +1750,31 @@ const EditProductPage = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  {/* Product Images */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="images">
+                        Product Images <span className="text-red-500">*</span>
+                      </Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAIAnalysis}
+                        disabled={isAnalyzing || formValues.imageFiles.length === 0}
+                        className="h-8 flex items-center gap-2 border-primary/20 hover:bg-primary/5 hover:border-primary/50 transition-all duration-300"
+                      >
+                        {isAnalyzing ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        ) : (
+                          <Sparkles className="h-4 w-4 text-primary" />
+                        )}
+                        <span className={isAnalyzing ? "animate-pulse" : ""}>
+                          {isAnalyzing ? "Analyzing..." : "Analyze with AI"}
+                        </span>
+                      </Button>
+                    </div>
+                  </div>
                   <div className="space-y-2">
                     <Label>Existing Images</Label>
                     <div className="grid grid-cols-4 gap-4 mt-2">

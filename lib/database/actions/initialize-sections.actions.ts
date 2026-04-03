@@ -2,6 +2,7 @@
 
 import { connectToDatabase } from "../connect";
 import WebsiteSection from "../models/website.section.model";
+import HeroSection from "../models/hero-section.model";
 
 /**
  * Initialize default website sections if they don't exist
@@ -10,7 +11,7 @@ import WebsiteSection from "../models/website.section.model";
 export async function initializeDefaultSections() {
   try {
     await connectToDatabase();
-    
+
     // Define the default sections that should be available
     const defaultSections = [
       {
@@ -21,11 +22,32 @@ export async function initializeDefaultSections() {
         description: "Main hero banner carousel at the top of the homepage"
       },
       {
+        name: "Stats Ticker",
+        sectionId: "stats-ticker",
+        isVisible: true,
+        order: 11,
+        description: "Moving band with feature highlights (Handcrafted, Shipping, etc.)"
+      },
+      {
         name: "Strength Takes Sweat",
         sectionId: "strength-takes-sweat",
         isVisible: true,
         order: 20,
         description: "Strength Takes Sweat section highlighting brand message"
+      },
+      {
+        name: "Dynamic Hero Sections",
+        sectionId: "dynamic-hero-section",
+        isVisible: true,
+        order: 25,
+        description: "Dynamically configured hero sections (all active ones)"
+      },
+      {
+        name: "Featured Collection",
+        sectionId: "featured-products",
+        isVisible: true,
+        order: 28,
+        description: "Tabs for Best Sellers and New Arrivals"
       },
       {
         name: "Featured Showcase",
@@ -47,6 +69,20 @@ export async function initializeDefaultSections() {
         isVisible: true,
         order: 50,
         description: "Showcase for product categories"
+      },
+      {
+        name: "Shop By Categories",
+        sectionId: "shop-by-categories",
+        isVisible: true,
+        order: 55,
+        description: "Premium branded carousel for shopping by categories"
+      },
+      {
+        name: "Gender Section",
+        sectionId: "gender-section",
+        isVisible: true,
+        order: 45,
+        description: "High-end display for Men, Women and Unisex categories"
       },
       {
         name: "Sub-Category Showcase",
@@ -91,13 +127,6 @@ export async function initializeDefaultSections() {
         description: "Carousel featuring newly arrived products"
       },
       {
-        name: "Top Reviews",
-        sectionId: "top-reviews",
-        isVisible: true,
-        order: 115,
-        description: "Showcases top customer reviews and testimonials"
-      },
-      {
         name: "Featured Videos",
         sectionId: "featured-videos",
         isVisible: true,
@@ -105,33 +134,50 @@ export async function initializeDefaultSections() {
         description: "Section showcasing featured videos"
       },
       {
+        name: "Featured Review Hero",
+        sectionId: "featured-review-hero",
+        isVisible: true,
+        order: 115,
+        description: "Large quote and review section with star ratings"
+      },
+      {
+        name: "Recent Blogs",
+        sectionId: "recent-blogs",
+        isVisible: true,
+        order: 125,
+        description: "Grid display of recent blog posts"
+      },
+      {
+        name: "Influencer Spotlight",
+        sectionId: "influencer-spotlight",
+        isVisible: true,
+        order: 135,
+        description: "Section showcasing influencer content and social proof"
+      },
+      {
         name: "All Products",
         sectionId: "all-products",
         isVisible: true,
-        order: 130,
-        description: "Section displaying all products"
-      },
-      {
-        name: "Collection Highlights",
-        sectionId: "collection-highlights",
-        isVisible: true,
         order: 140,
-        description: "Featured collections highlight section"
+        description: "Section displaying all products"
       }
     ];
-    
+
     // For each default section, check if it exists and create if it doesn't
     for (const section of defaultSections) {
-      const exists = await WebsiteSection.findOne({ 
-        sectionId: section.sectionId 
+      const exists = await WebsiteSection.findOne({
+        sectionId: section.sectionId
       });
-      
+
       if (!exists) {
         await WebsiteSection.create(section);
         console.log(`Created default section: ${section.name}`);
       }
     }
-    
+
+    // After creating default sections, check for hero sections and create website sections for them
+    await syncHeroSectionsToWebsiteSections();
+
     return {
       success: true,
       message: "Default website sections initialized successfully",
@@ -141,6 +187,58 @@ export async function initializeDefaultSections() {
     return {
       success: false,
       message: "Failed to initialize default website sections",
+    };
+  }
+}
+
+/**
+ * Sync all hero sections to website sections
+ * This makes each hero section individually selectable in the homepage layout
+ */
+export async function syncHeroSectionsToWebsiteSections() {
+  try {
+    await connectToDatabase();
+
+    // Get all hero sections
+    const heroSections = await HeroSection.find();
+
+    // For each hero section, create a corresponding website section if it doesn't exist
+    for (const heroSection of heroSections) {
+      // Create a unique section ID for the hero section
+      const sectionId = `dynamic-hero-section-${heroSection._id}`;
+
+      // Check if this section already exists
+      const exists = await WebsiteSection.findOne({ sectionId });
+
+      // If it doesn't exist, create it
+      if (!exists) {
+        await WebsiteSection.create({
+          name: `Hero Section: ${heroSection.title}`,
+          sectionId,
+          isVisible: heroSection.isActive,
+          order: 500 + heroSection.order, // Place hero sections in the middle by default
+          description: `Dynamic hero section with title "${heroSection.title}"`,
+        });
+        console.log(`Created website section for hero section: ${heroSection.title}`);
+      } else {
+        // Update the section name and visibility to match the hero section
+        await WebsiteSection.findByIdAndUpdate(exists._id, {
+          name: `Hero Section: ${heroSection.title}`,
+          isVisible: heroSection.isActive,
+          description: `Dynamic hero section with title "${heroSection.title}"`,
+        });
+      }
+    }
+
+    return {
+      success: true,
+      message: "Hero sections synced to website sections successfully",
+    };
+  } catch (error) {
+    console.error("Error syncing hero sections to website sections:", error);
+    return {
+      success: false,
+      message: "Failed to sync hero sections to website sections",
     };
   }
 }

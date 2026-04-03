@@ -7,10 +7,10 @@ export const dynamic = 'force-dynamic'; // Disable caching of this route
 export async function GET(request: NextRequest) {
   try {
     await connectToDatabase();
-    
+
     // Find all footers with active one first, using lean() for better performance
     const footers = await WebsiteFooter.find().sort({ isActive: -1, updatedAt: -1 }).lean();
-    
+
     // Default fallback footer
     const defaultFooter = {
       name: "Default Footer",
@@ -44,24 +44,24 @@ export async function GET(request: NextRequest) {
 
     // Log for debugging purposes
     console.log("Fetched footer count:", footers.length);
-    
+
     // Convert MongoDB documents to plain objects to avoid serialization issues
     const serializedFooters = JSON.parse(JSON.stringify(footers));
-    
-    return NextResponse.json({ 
-      success: true, 
+
+    return NextResponse.json({
+      success: true,
       footers: serializedFooters,
       footer: serializedFooters.find((footer: any) => footer.isActive) || defaultFooter,
       activeFooter: serializedFooters.find((footer: any) => footer.isActive) || defaultFooter,
       defaultFooter
     });
-    
+
   } catch (error: any) {
     console.error("Error fetching website footers:", error);
     return NextResponse.json(
-      { 
-        success: false, 
-        message: error.message || "Failed to fetch website footers" 
+      {
+        success: false,
+        message: error.message || "Failed to fetch website footers"
       },
       { status: 500 }
     );
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const data = await request.json();
-    console.log("Received footer form data:", JSON.stringify(data, null, 2));
+    console.log("RAW Received footer form data:", JSON.stringify(data, null, 2));
     await connectToDatabase();
 
     // Validate required fields
@@ -105,30 +105,32 @@ export async function POST(request: NextRequest) {
         youtube: data.socialMedia?.youtube?.trim() || "",
         linkedin: data.socialMedia?.linkedin?.trim() || ""
       },
-      companyLinks: Array.isArray(data.companyLinks) 
-        ? data.companyLinks.filter(link => link.title && link.url).map(link => ({
-            title: link.title.trim(),
-            url: link.url.trim()
-          }))
+      companyLinks: Array.isArray(data.companyLinks)
+        ? data.companyLinks.filter((link: any) => link.title && link.url).map((link: any) => ({
+          title: link.title.trim(),
+          url: link.url.trim()
+        }))
         : [],
-      shopLinks: Array.isArray(data.shopLinks) 
-        ? data.shopLinks.filter(link => link.title && link.url).map(link => ({
-            title: link.title.trim(),
-            url: link.url.trim()
-          }))
+      shopLinks: Array.isArray(data.shopLinks)
+        ? data.shopLinks.filter((link: any) => link.title && link.url).map((link: any) => ({
+          title: link.title.trim(),
+          url: link.url.trim()
+        }))
         : [],
-      helpLinks: Array.isArray(data.helpLinks) 
-        ? data.helpLinks.filter(link => link.title && link.url).map(link => ({
-            title: link.title.trim(),
-            url: link.url.trim()
-          }))
+      helpLinks: Array.isArray(data.helpLinks)
+        ? data.helpLinks.filter((link: any) => link.title && link.url).map((link: any) => ({
+          title: link.title.trim(),
+          url: link.url.trim()
+        }))
         : [],
       copyrightText: data.copyrightText.trim(),
-      isActive: Boolean(data.isActive)
+      isActive: Boolean(data.isActive),
+      showFooterName: data.showFooterName !== undefined ? Boolean(data.showFooterName) : true
     };
+    console.log("CLEAN Footer data to save:", JSON.stringify(cleanFooterData, null, 2));
 
     let footer;
-    
+
     // Check if this is an update to an existing footer
     if (data._id) {
       try {
@@ -139,21 +141,23 @@ export async function POST(request: NextRequest) {
             { $set: { isActive: false } }
           );
         }
-        
+
         // Update the existing footer
+        console.log("Updating footer with data:", JSON.stringify(cleanFooterData, null, 2));
         footer = await WebsiteFooter.findByIdAndUpdate(
           data._id,
           { $set: cleanFooterData },
-          { new: true, runValidators: true }
+          { new: true, runValidators: true, strict: false }
         );
-        
+        console.log("Updated footer result:", JSON.stringify(footer, null, 2));
+
         if (!footer) {
           return NextResponse.json(
             { success: false, message: "Footer with specified ID not found" },
             { status: 404 }
           );
         }
-        
+
         console.log("Updated existing footer:", data._id);
       } catch (error: any) {
         console.error("Error updating footer:", error);
@@ -168,7 +172,7 @@ export async function POST(request: NextRequest) {
         if (cleanFooterData.isActive) {
           await WebsiteFooter.updateMany({}, { $set: { isActive: false } });
         }
-        
+
         // Create new footer configuration
         footer = new WebsiteFooter(cleanFooterData);
         await footer.save();
@@ -203,7 +207,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
-    
+
     if (!id) {
       return NextResponse.json(
         { success: false, message: "Footer ID is required" },
@@ -215,23 +219,23 @@ export async function DELETE(request: NextRequest) {
 
     // Check if we're deleting the active footer
     const footer = await WebsiteFooter.findById(id).lean();
-    
+
     if (!footer) {
       return NextResponse.json(
         { success: false, message: "Footer not found" },
         { status: 404 }
       );
     }
-    
-    const isActiveFooter = footer.isActive;
-    
+
+    const isActiveFooter = (footer as any).isActive;
+
     // Delete the footer configuration
     await WebsiteFooter.findByIdAndDelete(id);
-    
+
     // If this was the active footer, set another one as active if available
     if (isActiveFooter) {
       const remainingFooters = await WebsiteFooter.find().sort({ updatedAt: -1 });
-      
+
       if (remainingFooters.length > 0) {
         // Set the most recently updated footer as active
         await WebsiteFooter.findByIdAndUpdate(
@@ -240,7 +244,7 @@ export async function DELETE(request: NextRequest) {
         );
       }
     }
-    
+
     return NextResponse.json({
       success: true,
       message: "Footer configuration deleted successfully",

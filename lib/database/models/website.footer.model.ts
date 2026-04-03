@@ -31,6 +31,7 @@ export interface IWebsiteFooter {
   }>;
   copyrightText: string;
   isActive: boolean;
+  showFooterName: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -83,6 +84,10 @@ const WebsiteFooterSchema = new Schema<IWebsiteFooter>(
       type: Boolean,
       default: false,
     },
+    showFooterName: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,
@@ -92,7 +97,7 @@ const WebsiteFooterSchema = new Schema<IWebsiteFooter>(
 // Only one footer can be active at a time
 WebsiteFooterSchema.pre('save', async function (next) {
   if (this.isModified('isActive') && this.isActive) {
-    await this.constructor.updateMany(
+    await (this.constructor as any).updateMany(
       { _id: { $ne: this._id } },
       { $set: { isActive: false } }
     );
@@ -102,5 +107,15 @@ WebsiteFooterSchema.pre('save', async function (next) {
 
 // Create and export the model
 const WebsiteFooter = mongoose.models.WebsiteFooter || mongoose.model<IWebsiteFooter>('WebsiteFooter', WebsiteFooterSchema);
+
+// Ensure the schema has showFooterName if it was missing from a cached model
+if (WebsiteFooter.schema && !WebsiteFooter.schema.paths.showFooterName) {
+  WebsiteFooter.schema.add({
+    showFooterName: {
+      type: Boolean,
+      default: true,
+    }
+  });
+}
 
 export default WebsiteFooter;

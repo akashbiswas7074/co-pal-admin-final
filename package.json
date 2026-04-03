@@ -38,6 +38,7 @@
     "@clerk/nextjs": "^6.19.4",
     "@emotion/react": "^11.13.3",
     "@emotion/styled": "^11.13.0",
+    "@google/genai": "^1.45.0",
     "@google/generative-ai": "^0.24.1",
     "@hello-pangea/dnd": "^18.0.1",
     "@hookform/resolvers": "^5.0.1",

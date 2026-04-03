@@ -52,7 +52,7 @@ const PersonalizationRule = mongoose.models.PersonalizationRule || mongoose.mode
 // Authentication check
 async function checkAuthentication() {
   let isAuthenticated = false;
-  
+
   try {
     const session = await getServerSession(authOptions);
     if (session && session.user) {
@@ -61,7 +61,7 @@ async function checkAuthentication() {
   } catch (error) {
     console.log("NextAuth session check failed:", error);
   }
-  
+
   if (!isAuthenticated) {
     const cookieStore = cookies();
     const adminId = cookieStore.get('adminId')?.value;
@@ -69,11 +69,11 @@ async function checkAuthentication() {
       isAuthenticated = true;
     }
   }
-  
+
   if (!isAuthenticated && process.env.NODE_ENV !== 'production') {
     isAuthenticated = true;
   }
-  
+
   return isAuthenticated;
 }
 
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
     }
 
     await connectToDatabase();
-    
+
     const rules = await PersonalizationRule.find({})
       .populate('content.heroSectionId', 'title subtitle')
       .sort({ 'content.priority': -1, createdAt: -1 });
@@ -126,9 +126,9 @@ export async function POST(request: NextRequest) {
     }
 
     await connectToDatabase();
-    
+
     const data = await request.json();
-    
+
     // Validate required fields
     if (!data.name || !data.content?.heroSectionId) {
       return NextResponse.json(
@@ -193,10 +193,10 @@ export async function PUT(request: NextRequest) {
     }
 
     await connectToDatabase();
-    
+
     const data = await request.json();
     const { id, ...updateData } = data;
-    
+
     if (!id) {
       return NextResponse.json(
         { success: false, message: "Rule ID is required" },
@@ -249,10 +249,10 @@ export async function DELETE(request: NextRequest) {
     }
 
     await connectToDatabase();
-    
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
-    
+
     if (!id) {
       return NextResponse.json(
         { success: false, message: "Rule ID is required" },

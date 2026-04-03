@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     
     // Method 2: Check for adminId cookie
     if (!isAuthenticated) {
-      const cookieStore = cookies();
+      const cookieStore = await cookies();
       const adminId = cookieStore.get('adminId')?.value;
       
       if (adminId) {

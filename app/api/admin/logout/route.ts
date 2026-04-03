@@ -4,13 +4,14 @@ import { cookies } from "next/headers";
 export async function POST(request: NextRequest) {
   try {
     // Clear all admin-related cookies
-    cookies().delete("adminId");
-    cookies().delete("adminToken");
+    const cookieStore = await cookies();
+    cookieStore.delete("adminId");
+    cookieStore.delete("adminToken");
     
     // Clear NextAuth session cookie if it exists
-    cookies().delete("next-auth.session-token");
-    cookies().delete("next-auth.csrf-token");
-    cookies().delete("next-auth.callback-url");
+    cookieStore.delete("next-auth.session-token");
+    cookieStore.delete("next-auth.csrf-token");
+    cookieStore.delete("next-auth.callback-url");
     
     return NextResponse.json({
       success: true,

@@ -4,6 +4,7 @@ import Category from "@/lib/database/models/category.model";
 import Product from "@/lib/database/models/product.model";
 import SubCategory from "@/lib/database/models/subCategory.model";
 import Tag from "@/lib/database/models/tag.model";
+import Sample from "@/lib/database/models/sample.model";
 import slugify from "slugify";
 import cloudinary from "cloudinary";
 import mongoose from "mongoose";
@@ -22,7 +23,7 @@ cloudinary.v2.config({
 // creation of a product for admin
 export const createProduct = async (
   sku: string,
-  images: [],
+  images: any[],
   sizes: Array<{ size: string; qty: string; price: string }>,
   discount: number,
   name: string,
@@ -45,7 +46,9 @@ export const createProduct = async (
     breadth: string;
     height: string;
     weight: string;
-  } // Shipping dimensions for delivery charge calculation
+  }, // Shipping dimensions for delivery charge calculation
+  sample5mlPrice?: number,
+  sample10mlPrice?: number
 ) => {
   try {
     await connectToDatabase();
@@ -180,6 +183,30 @@ export const createProduct = async (
         })
       });
       await newProduct.save();
+
+      // Create samples automatically if prices are provided
+      if (sample5mlPrice !== undefined && sample5mlPrice > 0) {
+        await Sample.create({
+          name: `${name} - 5ml`,
+          price: sample5mlPrice,
+          productId: newProduct._id.toString(),
+          variant: "5ml",
+          image: images[0]?.secure_url || images[0]?.url || images[0] || "",
+          status: "available"
+        });
+      }
+
+      if (sample10mlPrice !== undefined && sample10mlPrice > 0) {
+        await Sample.create({
+          name: `${name} - 10ml`,
+          price: sample10mlPrice,
+          productId: newProduct._id.toString(),
+          variant: "10ml",
+          image: images[0]?.secure_url || images[0]?.url || images[0] || "",
+          status: "available"
+        });
+      }
+
       return {
         message: "Product created successfully.",
         success: true,
@@ -297,7 +324,9 @@ export const updateProduct = async (
     height: string;
     weight: string;
   }, // Shipping dimensions for delivery charge calculation
-  brand?: string // Brand name for the product
+  brand?: string, // Brand name for the product
+  sample5mlPrice?: number,
+  sample10mlPrice?: number
 ) => {
   try {
     await connectToDatabase();
@@ -433,6 +462,36 @@ export const updateProduct = async (
     product.markModified('shippingDimensions');
 
     await product.save();
+
+    // Update or create samples
+    if (sample5mlPrice !== undefined && sample5mlPrice > 0) {
+      await Sample.findOneAndUpdate(
+        { productId: productId, variant: "5ml" },
+        { 
+          $set: { 
+            name: `${name} - 5ml`,
+            price: sample5mlPrice,
+            image: product.subProducts[0]?.images[0]?.url || product.subProducts[0]?.images[0] || "",
+          } 
+        },
+        { upsert: true, new: true }
+      );
+    }
+
+    if (sample10mlPrice !== undefined && sample10mlPrice > 0) {
+      await Sample.findOneAndUpdate(
+        { productId: productId, variant: "10ml" },
+        { 
+          $set: { 
+            name: `${name} - 10ml`,
+            price: sample10mlPrice,
+            image: product.subProducts[0]?.images[0]?.url || product.subProducts[0]?.images[0] || "",
+          } 
+        },
+        { upsert: true, new: true }
+      );
+    }
+
     return {
       message: "Product updated successfully.",
       success: true,
