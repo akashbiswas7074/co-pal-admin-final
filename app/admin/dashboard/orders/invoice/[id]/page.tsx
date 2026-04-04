@@ -26,20 +26,55 @@ export default function InvoicePage() {
     const router = useRouter();
     const orderId = Array.isArray(params?.id) ? params.id[0] : params?.id;
     const [order, setOrder] = useState<any>(null);
+    const [shipment, setShipment] = useState<any>(null);
     const [business, setBusiness] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [weightRatio, setWeightRatio] = useState<number>(1);
 
     useEffect(() => {
         const loadData = async () => {
             if (orderId) {
                 try {
+                    const searchParams = new URLSearchParams(window.location.search);
+                    const waybill = searchParams.get('waybill');
+
                     const [orderRes, businessRes] = await Promise.all([
                         getOrderById(orderId as string),
                         getBusinessDetails()
                     ]);
 
                     if (orderRes.success && orderRes.order) {
-                        setOrder(orderRes.order);
+                        let currentOrder = orderRes.order;
+                        setOrder(currentOrder);
+
+                        // If waybill is provided, filter items and calculate weight ratio
+                        if (waybill) {
+                            try {
+                                const shipRes = await fetch(`/api/shipment/list?waybill=${waybill}`);
+                                const shipData = await shipRes.json();
+                                // Defensive check: some endpoints returns data.shipments, others just shipments
+                                const shipmentList = shipData.data?.shipments || shipData.shipments || [];
+                                
+                                if (shipData.success && shipmentList.length > 0) {
+                                    const currentShipment = shipmentList[0];
+                                    setShipment(currentShipment);
+
+                                    // Calculate weight ratio for this package
+                                    const orderItems = currentOrder.orderItems || currentOrder.products || [];
+                                    const pkgWeight = currentShipment.packageDetails?.weight || 500;
+                                    
+                                    // If it's a partial shipment, we split by weight ratio
+                                    // Total weight of the whole ORDER is needed for the true split
+                                    // For simplicity and matching the label, we use the ratio from the shipment service logic
+                                    if (currentShipment.shipmentType === 'MPS') {
+                                        // MPS specific logic could be added here if we had the sibling package weights
+                                        // For now, we trust the codAmount set in the shipment metadata
+                                    }
+                                }
+                            } catch (err) {
+                                console.error("Error fetching shipment for invoice:", err);
+                            }
+                        }
                     }
                     setBusiness(businessRes);
                 } catch (error) {
@@ -55,8 +90,38 @@ export default function InvoicePage() {
     if (loading) return <Container className="flex justify-center items-center h-screen"><Loader size="xl" /></Container>;
     if (!order) return <Container><Text>Order not found</Text></Container>;
 
-    // Invoice items - normalize between orderItems and products
-    const items = order.orderItems && order.orderItems.length > 0 ? order.orderItems : order.products;
+    // Invoice items - normalize and filter by waybill if applicable
+    let items = order.orderItems && order.orderItems.length > 0 ? order.orderItems : order.products;
+    
+    if (shipment && shipment.packageDetails?.productDescription) {
+        // If we have a shipment, we only show those items
+        // We match by product name or ID if possible, but simplest is to trust the shipment's description
+        // For better accuracy, we look for items with the matching waybillNumber if tracked
+        const shipmentItems = items.filter((i: any) => 
+            i.waybillNumber === shipment.primaryWaybill || 
+            shipment.waybillNumbers?.includes(i.waybillNumber)
+        );
+        if (shipmentItems.length > 0) {
+            items = shipmentItems;
+        }
+    }
+
+    // Pricing Calculation
+    const subtotal = items.reduce((sum: number, i: any) => sum + ((i.price || 0) * (i.qty || i.quantity || 1)), 0);
+    
+    // If it's a partial invoice (viewed by waybill), we might want to override total price
+    // to match the Delhivery label's "Collect" amount (which we split by weight).
+    const displayTotal = (shipment && shipment.packageDetails?.codAmount) 
+        ? shipment.packageDetails.codAmount 
+        : (order.totalAmount || order.total || subtotal);
+    
+    // Calculate proportional tax/shipping if it's a partial view
+    const overallTotal = (order.totalAmount || order.total || 1);
+    const splitRatio = displayTotal / overallTotal;
+    
+    const displayShipping = (order.shippingPrice || 0) * splitRatio;
+    const displayTax = (order.taxPrice || 0) * splitRatio;
+    const displayDiscount = (order.discountAmount || 0) * splitRatio;
 
     return (
         <Box bg="white" mih="100vh" p="md">
@@ -141,14 +206,20 @@ export default function InvoicePage() {
                                 {order.shippingAddress?.address2 ? `, ${order.shippingAddress.address2}` : ''}
                             </Text>
                             <Text size="sm">
-                                {order.shippingAddress?.city}, {order.shippingAddress?.state} - {order.shippingAddress?.postalCode}
+                                {order.shippingAddress?.city}, {order.shippingAddress?.state} - {order.shippingAddress?.zipCode || order.shippingAddress?.postalCode}
                             </Text>
                             <Text size="sm">{order.shippingAddress?.country}</Text>
                             <Stack gap={2} mt="sm">
-                                <Text size="sm">Phone: {order.shippingAddress?.phone || order.user?.phone}</Text>
+                                <Text size="sm">Phone: {order.shippingAddress?.phone || order.user?.phone || order.shippingAddress?.phoneNumber}</Text>
                                 <Text size="sm">Email: {order.user?.email}</Text>
                                 {order.gstInfo?.gstin && <Text size="sm">GSTIN: <strong>{order.gstInfo.gstin}</strong></Text>}
                             </Stack>
+                            {shipment && (
+                                <Box mt="sm" p="xs" bg="blue.0" style={{ borderRadius: '4px', border: '1px solid #e7f5ff' }}>
+                                    <Text size="xs" fw={700} c="blue.8">SHIPMENT INVOICE</Text>
+                                    <Text size="xs" c="blue.7">Ref Waybill: {shipment.primaryWaybill}</Text>
+                                </Box>
+                            )}
                         </Box>
                     </Grid.Col>
                 </Grid>
@@ -206,7 +277,7 @@ export default function InvoicePage() {
                             {order.paymentId && <Text size="sm">Ref ID: {order.paymentId}</Text>}
                             <Divider my="sm" />
                             <Text size="xs" c="dimmed">
-                                Thank you for your business. If you have any questions about this invoice, please contact support.
+                                Thank you for your business. This is a computer generated invoice.
                             </Text>
                         </Box>
                     </Grid.Col>
@@ -215,46 +286,40 @@ export default function InvoicePage() {
                             <Stack gap="xs">
                                 <Group justify="space-between">
                                     <Text size="sm" c="dimmed">Subtotal</Text>
-                                    <Text size="sm" fw={500}>₹{(order.itemsPrice || 0).toFixed(2)}</Text>
+                                    <Text size="sm" fw={500}>₹{subtotal.toFixed(2)}</Text>
                                 </Group>
 
-                                {order.discountAmount > 0 && (
+                                {displayDiscount > 0 && (
                                     <Group justify="space-between" c="green.7">
                                         <Text size="sm">Discount</Text>
-                                        <Text size="sm">- ₹{order.discountAmount.toFixed(2)}</Text>
+                                        <Text size="sm">- ₹{displayDiscount.toFixed(2)}</Text>
                                     </Group>
                                 )}
 
                                 <Group justify="space-between">
                                     <Text size="sm" c="dimmed">Shipping</Text>
-                                    <Text size="sm" fw={500}>₹{(order.shippingPrice || 0).toFixed(2)}</Text>
+                                    <Text size="sm" fw={500}>₹{displayShipping.toFixed(2)}</Text>
                                 </Group>
 
                                 {/* Tax Section - Conditionally Rendered */}
-                                {order.taxPrice > 0 && (
+                                {displayTax > 0 && (
                                     <>
                                         <Divider style={{ borderStyle: 'dashed' }} />
                                         {(order.cgst || order.sgst) ? (
                                             <>
                                                 <Group justify="space-between">
                                                     <Text size="sm" c="dimmed">CGST</Text>
-                                                    <Text size="sm">₹{(order.cgst || 0).toFixed(2)}</Text>
+                                                    <Text size="sm">₹{((order.cgst || 0) * splitRatio).toFixed(2)}</Text>
                                                 </Group>
                                                 <Group justify="space-between">
                                                     <Text size="sm" c="dimmed">SGST</Text>
-                                                    <Text size="sm">₹{(order.sgst || 0).toFixed(2)}</Text>
+                                                    <Text size="sm">₹{((order.sgst || 0) * splitRatio).toFixed(2)}</Text>
                                                 </Group>
-                                                {order.igst > 0 && (
-                                                    <Group justify="space-between">
-                                                        <Text size="sm" c="dimmed">IGST</Text>
-                                                        <Text size="sm">₹{order.igst.toFixed(2)}</Text>
-                                                    </Group>
-                                                )}
                                             </>
                                         ) : (
                                             <Group justify="space-between">
                                                 <Text size="sm" c="dimmed">Tax / GST</Text>
-                                                <Text size="sm">₹{order.taxPrice.toFixed(2)}</Text>
+                                                <Text size="sm">₹{displayTax.toFixed(2)}</Text>
                                             </Group>
                                         )}
                                     </>
@@ -264,7 +329,7 @@ export default function InvoicePage() {
 
                                 <Group justify="space-between" align="center">
                                     <Text size="md" fw={700}>Grand Total</Text>
-                                    <Title order={3}>₹{(order.totalAmount || order.total || 0).toFixed(2)}</Title>
+                                    <Title order={3}>₹{Number(displayTotal).toFixed(2)}</Title>
                                 </Group>
                             </Stack>
                         </Paper>

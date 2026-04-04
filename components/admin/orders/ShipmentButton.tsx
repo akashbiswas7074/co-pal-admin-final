@@ -61,6 +61,10 @@ interface ShipmentButtonProps {
   orderStatus?: string;
   shipmentCreated?: boolean;
   className?: string;
+  itemId?: string; // Individual product/item ID for partial shipment
+  itemName?: string; // Product name for display
+  itemShipped?: boolean; // Whether this specific item is already shipped
+  itemWaybill?: string; // Waybill number for this specific item
   onShipmentUpdate?: (orderId: string, shipmentData: any) => void;
 }
 
@@ -70,6 +74,10 @@ export function ShipmentButton({
   orderStatus,
   shipmentCreated,
   className,
+  itemId,
+  itemName,
+  itemShipped,
+  itemWaybill,
   onShipmentUpdate
 }: ShipmentButtonProps) {
   const router = useRouter();
@@ -85,7 +93,11 @@ export function ShipmentButton({
   };
 
   const getShipmentStatus = () => {
-    if (orderData.trackingNumber || shipmentCreated) {
+    // If we have item-level status, use that
+    if (itemShipped || itemWaybill) {
+      return { status: 'shipped', label: 'Shipped', color: 'bg-green-500' };
+    }
+    if (orderData.trackingNumber || (shipmentCreated && !itemId)) {
       return { status: 'shipped', label: 'Shipped', color: 'bg-green-500' };
     }
     if (orderData.orderStatus === 'processing') {
@@ -95,8 +107,12 @@ export function ShipmentButton({
   };
 
   const handleCreateShipment = () => {
-    // Navigate to shipment management page with order pre-selected
-    router.push(`/admin/dashboard/shipment?orderId=${orderData._id}`);
+    // Navigate to shipment management page with order and optional item pre-selected
+    const params = new URLSearchParams({ orderId: orderData._id });
+    if (itemId) {
+      params.set('itemId', itemId);
+    }
+    router.push(`/admin/dashboard/shipment?${params.toString()}`);
   };
 
   const handleCancelShipment = async () => {
@@ -138,7 +154,8 @@ export function ShipmentButton({
         {shipmentStatus.label}
       </Badge>
 
-      {!orderData.trackingNumber && !shipmentCreated ? (
+      {/* Show Create Shipment for: no shipment at all, OR item-level when this item isn't shipped yet */}
+      {((!orderData.trackingNumber && !shipmentCreated) || (itemId && !itemShipped && !itemWaybill)) ? (
         <Button
           size="sm"
           onClick={handleCreateShipment}

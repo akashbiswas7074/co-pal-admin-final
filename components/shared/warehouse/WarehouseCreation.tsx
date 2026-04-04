@@ -88,7 +88,8 @@ export const WarehouseCreation: React.FC<WarehouseCreationProps> = ({
   useEffect(() => {
     const checkApiStatus = async () => {
       try {
-        const response = await fetch('/api/warehouse/sync');
+        // Use GET /api/warehouse (which we know works) to check configuration
+        const response = await fetch('/api/warehouse');
         const result = await response.json();
         
         if (response.ok && result.success) {

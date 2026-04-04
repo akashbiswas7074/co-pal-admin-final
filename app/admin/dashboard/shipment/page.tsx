@@ -107,9 +107,11 @@ function UnifiedShipmentPageContent() {
     if (!searchParams) return; // Guard against null searchParams
 
     const orderIdFromUrl = searchParams.get('orderId');
+    const itemIdFromUrl = searchParams.get('itemId');
     if (orderIdFromUrl && orders.length > 0) {
       setSelectedOrderId(orderIdFromUrl);
-      setActiveTab('orders'); // Switch to orders tab to show the selection
+      // If itemId is provided, go directly to create tab for individual product shipment
+      setActiveTab(itemIdFromUrl ? 'create' : 'orders');
     }
   }, [searchParams, orders]);
 
@@ -612,7 +614,7 @@ function UnifiedShipmentPageContent() {
 
         {/* Create Shipment Tab */}
         <TabsContent value="create" className="space-y-6">
-          <ShipmentDashboard selectedOrderId={selectedOrderId} />
+          <ShipmentDashboard selectedOrderId={selectedOrderId} preSelectedItemId={searchParams?.get('itemId') || undefined} />
         </TabsContent>
 
         {/* Manage Shipments Tab */}

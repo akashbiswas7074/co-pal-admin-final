@@ -261,17 +261,17 @@ export default function ShipmentsManagementPage() {
 
   const fetchWarehouses = async () => {
     try {
-      const response = await fetch('/api/admin/warehouses');
+      const response = await fetch('/api/warehouse');
       const result = await response.json();
       
       if (result.success && result.data) {
-        // Handle the specific structure: data.warehouses
-        const warehousesData = result.data.warehouses || result.data;
+        // Unified API returns array directly in data
+        const warehousesData = result.data;
         const formattedWarehouses = warehousesData.map((warehouse: any) => ({
           name: warehouse.name,
           location: warehouse.city || warehouse.location || 'Unknown',
           address: warehouse.address || '',
-          pincode: warehouse.pincode || '',
+          pincode: warehouse.pincode || warehouse.pin || '',
           phone: warehouse.phone || '',
           active: warehouse.status === 'active' || true
         }));

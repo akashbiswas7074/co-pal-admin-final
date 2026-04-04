@@ -775,22 +775,28 @@ export function ComprehensiveShipmentManager({
                       <TableRow key={shipment._id}>
                         <TableCell className="font-medium">{shipment.orderId}</TableCell>
                         <TableCell>
-                          <div className="space-y-1">
-                            {shipment.waybillNumbers.map(waybill => (
-                              <div key={waybill} className="flex items-center space-x-2">
-                                <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                                  {waybill}
-                                </code>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => trackShipment(waybill)}
-                                >
-                                  <Eye className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
+                          {shipment.waybillNumbers && shipment.waybillNumbers.length > 0 ? (
+                            <div className="space-y-1">
+                              {shipment.waybillNumbers.map(waybill => (
+                                <div key={waybill} className="flex items-center space-x-2">
+                                  <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                                    {waybill}
+                                  </code>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => trackShipment(waybill)}
+                                  >
+                                    <Eye className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-gray-400 italic bg-gray-50 px-2 py-1 rounded inline-block">
+                              Pending Delhivery Ticket
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell>
                           <div>

@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Warehouse, 
+  Warehouse as WarehouseIcon, 
   Plus, 
   List,
   Building2,
@@ -12,18 +12,63 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { RefreshCw } from 'lucide-react';
 import { WarehouseCreation } from '@/components/shared/warehouse/WarehouseCreation';
 import { WarehouseList } from '@/components/shared/warehouse/WarehouseList';
 import { WarehouseEdit } from '@/components/shared/warehouse/WarehouseEdit';
 
 export default function AdminWarehousePage() {
-  const [activeTab, setActiveTab] = useState('create');
-  const [warehouseCreated, setWarehouseCreated] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState('list');
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [editingWarehouse, setEditingWarehouse] = useState<any>(null);
+  const [warehouseCreated, setWarehouseCreated] = useState<any>(null);
+  const [syncing, setSyncing] = useState(false);
+
+  const handleSync = async () => {
+    try {
+      setSyncing(true);
+      const response = await fetch('/api/warehouse/sync', {
+        method: 'POST',
+      });
+      const result = await response.json();
+      
+      if (result.success) {
+        alert(result.message); // Using simple alert for now
+        fetchWarehouses();
+      } else {
+        alert(result.error || 'Failed to sync warehouses');
+      }
+    } catch (error: any) {
+      console.error('Sync error:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchWarehouses();
+  }, []);
+
+  const fetchWarehouses = async () => {
+    try {
+      const response = await fetch('/api/warehouse');
+      const result = await response.json();
+      if (result.success) {
+        setWarehouses(result.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch warehouses:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleWarehouseCreated = (data: any) => {
     setWarehouseCreated(data);
-    // You could also switch to a list view or show success message
+    fetchWarehouses();
+    setActiveTab('list');
   };
 
   const handleEditWarehouse = (warehouse: any) => {
@@ -33,6 +78,7 @@ export default function AdminWarehousePage() {
 
   const handleWarehouseUpdated = (data: any) => {
     setEditingWarehouse(null);
+    fetchWarehouses();
     setActiveTab('list');
   };
 
@@ -41,6 +87,9 @@ export default function AdminWarehousePage() {
     setActiveTab('list');
   };
 
+  const activeCount = warehouses.filter(w => w.status === 'active' || w.isActive).length;
+  const citiesCount = new Set(warehouses.map(w => w.city).filter(Boolean)).size;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto p-6">
@@ -48,7 +97,7 @@ export default function AdminWarehousePage() {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-3 bg-blue-100 rounded-xl">
-              <Warehouse className="h-8 w-8 text-blue-600" />
+              <WarehouseIcon className="h-8 w-8 text-blue-600" />
             </div>
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Warehouse Management</h1>
@@ -68,7 +117,7 @@ export default function AdminWarehousePage() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-600">Active Warehouses</p>
-                    <p className="text-2xl font-bold text-gray-900">0</p>
+                    <p className="text-2xl font-bold text-gray-900">{loading ? '...' : activeCount}</p>
                   </div>
                 </div>
               </CardContent>
@@ -82,7 +131,7 @@ export default function AdminWarehousePage() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-600">Cities Covered</p>
-                    <p className="text-2xl font-bold text-gray-900">0</p>
+                    <p className="text-2xl font-bold text-gray-900">{loading ? '...' : citiesCount}</p>
                   </div>
                 </div>
               </CardContent>
@@ -106,20 +155,32 @@ export default function AdminWarehousePage() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 max-w-lg">
-            <TabsTrigger value="create" className="flex items-center gap-2">
-              <Plus className="h-4 w-4" />
-              Create Warehouse
-            </TabsTrigger>
-            <TabsTrigger value="list" className="flex items-center gap-2">
-              <List className="h-4 w-4" />
-              Warehouse List
-            </TabsTrigger>
-            <TabsTrigger value="edit" className="flex items-center gap-2" disabled={!editingWarehouse}>
-              <Building2 className="h-4 w-4" />
-              Edit Warehouse
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+            <TabsList className="grid w-full grid-cols-3 max-w-lg">
+              <TabsTrigger value="create" className="flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                Create Warehouse
+              </TabsTrigger>
+              <TabsTrigger value="list" className="flex items-center gap-2">
+                <List className="h-4 w-4" />
+                Warehouse List
+              </TabsTrigger>
+              <TabsTrigger value="edit" className="flex items-center gap-2" disabled={!editingWarehouse}>
+                <Building2 className="h-4 w-4" />
+                Edit Warehouse
+              </TabsTrigger>
+            </TabsList>
+
+            <Button 
+              variant="outline" 
+              onClick={handleSync} 
+              disabled={syncing || loading}
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Syncing...' : 'Sync from Delhivery'}
+            </Button>
+          </div>
 
           <TabsContent value="create" className="mt-6">
             <Card>
@@ -139,12 +200,13 @@ export default function AdminWarehousePage() {
                   Warehouse List
                 </CardTitle>
                 <CardDescription>
-                  View and manage all registered warehouses
+                  View and manage all registered warehouses. Note: Existing Delhivery portals warehouses must be created here to sync.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <WarehouseList 
                   onEdit={handleEditWarehouse}
+                  onDelete={fetchWarehouses}
                 />
               </CardContent>
             </Card>

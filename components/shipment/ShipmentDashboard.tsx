@@ -15,7 +15,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import ShipmentManager from './ShipmentManager';
+import ShipmentManager from '@/components/shared/shipment/ShipmentManagerNew';
 
 interface ShipmentStats {
   total: number;
@@ -27,9 +27,10 @@ interface ShipmentStats {
 
 interface ShipmentDashboardProps {
   selectedOrderId?: string;
+  preSelectedItemId?: string;
 }
 
-export default function ShipmentDashboard({ selectedOrderId: propSelectedOrderId }: ShipmentDashboardProps = {}) {
+export default function ShipmentDashboard({ selectedOrderId: propSelectedOrderId, preSelectedItemId }: ShipmentDashboardProps = {}) {
   const [stats, setStats] = useState<ShipmentStats>({
     total: 0,
     pending: 0,
@@ -190,6 +191,7 @@ export default function ShipmentDashboard({ selectedOrderId: propSelectedOrderId
           {selectedOrderId ? (
             <ShipmentManager 
               orderId={selectedOrderId}
+              preSelectedItemId={preSelectedItemId}
               onShipmentCreated={() => {
                 fetchStats();
               }}

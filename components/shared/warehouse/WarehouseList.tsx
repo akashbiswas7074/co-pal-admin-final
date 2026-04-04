@@ -36,11 +36,13 @@ interface Warehouse {
 
 interface WarehouseListProps {
   onEdit?: (warehouse: Warehouse) => void;
+  onDelete?: () => void;
   className?: string;
 }
 
 export const WarehouseList: React.FC<WarehouseListProps> = ({
   onEdit,
+  onDelete,
   className = ''
 }) => {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -84,7 +86,7 @@ export const WarehouseList: React.FC<WarehouseListProps> = ({
     }
 
     try {
-      const response = await fetch(`/api/warehouse/update?id=${warehouseId}`, {
+      const response = await fetch(`/api/warehouse?id=${warehouseId}`, {
         method: 'DELETE',
       });
 
@@ -93,6 +95,7 @@ export const WarehouseList: React.FC<WarehouseListProps> = ({
       if (result.success) {
         // Remove from local state
         setWarehouses(prev => prev.filter(w => w.id !== warehouseId));
+        if (onDelete) onDelete();
       } else {
         setError(result.error || 'Failed to deactivate warehouse');
       }

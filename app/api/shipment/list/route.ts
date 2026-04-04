@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { shipmentService } from '@/lib/shipment/shipment-service';
 import { connectToDatabase } from '@/lib/database/connect';
@@ -9,7 +10,10 @@ import Order from '@/lib/database/models/order.model';
  */
 
 export async function GET(request: NextRequest) {
-  console.log('[Shipment List API] GET request received');
+  console.log('\n\n#############################################');
+  console.log('### [Shipment List API] GET Handler CALL ###');
+  console.log('#############################################\n');
+  console.log('[Shipment List API] Full URL:', request.url);
   
   try {
     const { searchParams: requestParams } = new URL(request.url);
@@ -48,6 +52,11 @@ export async function GET(request: NextRequest) {
     const query: any = {
       $or: [
         { shipmentCreated: true },
+        { status: 'Dispatched' },
+        { 'orderItems.status': 'Dispatched' },
+        { 'products.status': 'Dispatched' },
+        { 'orderItems.waybillNumber': { $exists: true, $ne: null } },
+        { 'products.waybillNumber': { $exists: true, $ne: null } },
         { reverseShipment: { $exists: true } },
         { replacementShipment: { $exists: true } }
       ]
@@ -67,14 +76,18 @@ export async function GET(request: NextRequest) {
       .lean();
     
     // Transform to shipment list format
-    const shipmentList = orders.map(order => {
+    const shipmentList = orders.map((order: any) => {
       const shippingAddress = order.shippingAddress || {};
       const shipmentDetails = order.shipmentDetails || order.reverseShipment || order.replacementShipment;
       
       return {
         _id: order._id,
         orderId: order._id.toString(),
-        waybillNumbers: shipmentDetails?.waybillNumbers || [],
+        waybillNumbers: Array.from(new Set([
+          ...(shipmentDetails?.waybillNumbers || []),
+          ...(order.orderItems || []).map((i: any) => i.waybillNumber).filter(Boolean),
+          ...(order.products || []).map((i: any) => i.waybillNumber).filter(Boolean)
+        ])),
         status: order.status,
         shipmentType: shipmentDetails?.shipmentType || 'FORWARD',
         pickupLocation: shipmentDetails?.pickupLocation || 'Unknown',

@@ -12,7 +12,7 @@ import {
   DollarSign,
   RefreshCw
 } from 'lucide-react';
-import { ShipmentManager } from '@/components/shared/shipment/ShipmentManager';
+import { ShipmentManager } from '@/components/shared/shipment/ShipmentManagerNew';
 import OrderStatusManager from '@/components/shared/orders/OrderStatusManager';
 
 interface OrderDetails {

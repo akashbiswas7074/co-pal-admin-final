@@ -115,38 +115,10 @@ export async function GET(request: NextRequest) {
     } catch (delhiveryError: any) {
       console.error('[Tracking API] Delhivery API Error:', delhiveryError);
       
-      // For demo/development, create mock tracking info
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[Tracking API] Creating demo tracking info...');
-        
-        trackingInfo = {
-          waybill: waybill!,
-          status: 'In Transit',
-          scans: [
-            {
-              location: 'Mumbai Hub',
-              status: 'Picked Up',
-              timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-              description: 'Package picked up from origin'
-            },
-            {
-              location: 'Delhi Hub',
-              status: 'In Transit',
-              timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
-              description: 'Package in transit to destination'
-            }
-          ],
-          origin: 'Mumbai',
-          destination: 'Kolkata',
-          estimatedDelivery: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          currentLocation: 'Delhi Hub'
-        };
-      } else {
-        return NextResponse.json({
-          success: false,
-          error: `Failed to track shipment: ${delhiveryError.message}`
-        }, { status: 500 });
-      }
+      return NextResponse.json({
+        success: false,
+        error: `Failed to track shipment: ${delhiveryError.message}`
+      }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -194,29 +166,10 @@ export async function POST(request: NextRequest) {
         const trackingInfo = await trackShipmentFromDelhivery(waybill);
         trackingResults.push(trackingInfo);
       } catch (error: any) {
-        // For demo mode, add mock data for failed tracking
-        if (process.env.NODE_ENV === 'development') {
-          trackingResults.push({
-            waybill,
-            status: 'In Transit',
-            scans: [
-              {
-                location: 'Origin Hub',
-                status: 'Picked Up',
-                timestamp: new Date().toISOString(),
-                description: 'Package picked up'
-              }
-            ],
-            origin: 'Mumbai',
-            destination: 'Kolkata',
-            currentLocation: 'Origin Hub'
-          });
-        } else {
-          trackingResults.push({
-            waybill,
-            error: error.message
-          });
-        }
+        trackingResults.push({
+          waybill,
+          error: error.message
+        });
       }
     }
 

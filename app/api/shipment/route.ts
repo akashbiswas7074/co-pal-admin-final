@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/database/connect';
 import Order from '@/lib/database/models/order.model';
+import Shipment from '@/lib/database/models/shipment.model';
 import Warehouse from '@/lib/database/models/warehouse.model';
+import Product from '@/lib/database/models/product.model'; // Added Product model
 import { generateHSNCode, generateHSNFromDescription } from '@/lib/utils/hsn-code-generator';
 import { delhiveryAPI } from '@/lib/shipment/delhivery-api';
 import type {
@@ -129,51 +131,16 @@ function preValidateAddressServiceability(address: string, pincode: string, city
 // Helper function to get warehouse details
 async function getWarehouseDetails(warehouseName: string): Promise<any> {
   try {
-    // First try to find the specific warehouse
-    let warehouse = await Warehouse.findOne({ 
+    // try to find the specific warehouse
+    const warehouse = await Warehouse.findOne({ 
       name: warehouseName, 
       status: 'active' 
     }).lean();
     
-    // If not found, try to find any active warehouse as fallback
-    if (!warehouse) {
-      console.log(`[Shipment API] Warehouse "${warehouseName}" not found, trying fallback...`);
-      warehouse = await Warehouse.findOne({ 
-        status: 'active' 
-      }).lean();
-    }
-    
-    // If still no warehouse found, create a default one
-    if (!warehouse) {
-      console.log(`[Shipment API] No active warehouse found, using default configuration`);
-      return {
-        name: warehouseName || 'Default Warehouse',
-        address: 'Default Address',
-        city: 'Kolkata',
-        state: 'West Bengal',
-        pin: '700001',
-        phone: '9876543210',
-        country: 'India',
-        registered_name: 'Default Seller',
-        status: 'active'
-      };
-    }
-    
     return warehouse;
   } catch (error) {
     console.error(`[Shipment API] Error fetching warehouse:`, error);
-    // Return default warehouse configuration
-    return {
-      name: warehouseName || 'Default Warehouse',
-      address: 'Default Address',
-      city: 'Kolkata',
-      state: 'West Bengal',
-      pin: '700001',
-      phone: '9876543210',
-      country: 'India',
-      registered_name: 'Default Seller',
-      status: 'active'
-    };
+    return null;
   }
 }
 
@@ -217,11 +184,27 @@ function createShipmentData(
   order: any, 
   shipmentRequest: ShipmentCreateRequest,
   warehouse: any,
-  packageIndex?: number
+  packageIndex?: number,
+  remainingBalance?: number
 ): DelhiveryShipmentData {
   const shippingAddress = order.shippingAddress || order.deliveryAddress;
-  const totalQuantity = order.orderItems?.reduce((sum: number, item: any) => sum + (item.qty || item.quantity || 1), 0) || 1;
-  const productsDesc = order.orderItems?.map((item: any) => item.name).join(', ') || 'Order Items';
+  
+  // SUPPORT PARITAL SHIPMENTS: Filter items if selectedItemIds is provided
+  const selectedItems = shipmentRequest.selectedItemIds && shipmentRequest.selectedItemIds.length > 0
+    ? (order.orderItems || order.products || []).filter((item: any) => 
+        shipmentRequest.selectedItemIds?.includes(item._id?.toString())
+      )
+    : (order.orderItems || order.products || []);
+
+  const totalQuantity = selectedItems.reduce((sum: number, item: any) => sum + (item.qty || item.quantity || 1), 0) || 1;
+  const productsDesc = selectedItems.map((item: any) => item.name).join(', ') || 'Order Items';
+  
+  // Calculate subtotal for selected items for proportional COD
+  const selectedItemsSubtotal = selectedItems.reduce((sum: number, item: any) => {
+    const price = item.price || 0;
+    const qty = item.qty || item.quantity || 1;
+    return sum + (price * qty);
+  }, 0);
   
   // Determine payment mode based on shipment type
   let paymentMode: 'COD' | 'Prepaid' | 'Pickup' | 'REPL' = 'Prepaid';
@@ -248,14 +231,51 @@ function createShipmentData(
     length: 10, width: 10, height: 10
   };
 
-  // COD amount calculation
-  const totalAmount = order.total || order.totalAmount || 0;
-  const codAmount = (paymentMode === 'COD') ? totalAmount.toString() : '0';
+  // COD amount calculation - CRITICAL: Use strictly selected items subtotal for partial shipments
+  const orderTotalAmount = order.total || order.totalAmount || 0;
   
-  // For MPS, distribute amount across packages
-  const mpsAmount = shipmentRequest.shipmentType === 'MPS' && shipmentRequest.packages 
-    ? (paymentMode === 'COD' ? totalAmount : 0) 
-    : 0;
+  // If we have selected items, use their specific subtotal
+  // Otherwise, use the order total as fallback for complete shipments
+  let itemTotalAmount = orderTotalAmount;
+  if (shipmentRequest.selectedItemIds && shipmentRequest.selectedItemIds.length > 0) {
+      itemTotalAmount = selectedItemsSubtotal > 0 ? selectedItemsSubtotal : (orderTotalAmount / (order.orderItems?.length || 1)) * shipmentRequest.selectedItemIds.length;
+  }
+
+  // Support weight-proportional splitting for Multi-Package Shipments (MPS)
+  let packagePrice = itemTotalAmount;
+  if (shipmentRequest.shipmentType === 'MPS' && shipmentRequest.packages && shipmentRequest.packages.length > 0) {
+      const totalWeight = shipmentRequest.packages.reduce((sum, pkg) => sum + (pkg.weight || 500), 0);
+      const currentPkgWeight = packageDetails?.weight || 500;
+      
+      // Proportional split: (Package Weight / Total Weight) * Total Price
+      const weightRatio = currentPkgWeight / Math.max(1, totalWeight);
+      packagePrice = itemTotalAmount * weightRatio;
+      
+      console.log(`[Shipment API] MPS Weight-Proportional Splitting: Pkg=${packageIndex}, Weight=${currentPkgWeight}/${totalWeight}, Ratio=${weightRatio.toFixed(4)}, PkgPrice=${packagePrice}`);
+  }
+  
+  const codAmount = (paymentMode === 'COD') ? Math.round(packagePrice).toString() : '0';
+  const totalAmount = Math.round(packagePrice).toString();
+
+  // Apply Remaining Balance Cap - CRITICAL: Ensure we don't exceed order total across all waybills
+  let finalCodAmount = codAmount;
+  let finalTotalAmount = totalAmount;
+
+  if (typeof remainingBalance === 'number') {
+    const numericCod = parseFloat(codAmount) || 0;
+    const numericTotal = parseFloat(totalAmount) || 0;
+
+    // Cap the amounts to not exceed what's left
+    const cappedCod = Math.min(numericCod, Math.max(0, remainingBalance));
+    const cappedTotal = Math.min(numericTotal, Math.max(0, remainingBalance));
+
+    finalCodAmount = Math.round(cappedCod).toString();
+    finalTotalAmount = Math.round(cappedTotal).toString();
+
+    if (numericCod > cappedCod || numericTotal > cappedTotal) {
+      console.log(`[Shipment API] Price Cap Applied: Original=${numericCod}, Capped=${cappedCod}, Remaining=${remainingBalance}`);
+    }
+  }
 
   // Clean and format data for Delhivery API requirements
   const cleanPhone = (phone: string) => {
@@ -456,7 +476,10 @@ function createShipmentData(
     state: formatState(shippingAddress.state || '', cleanPincode(shippingAddress.zipCode || shippingAddress.pincode || '')),
     country: (shippingAddress.country || 'India').trim(),
     phone: cleanPhone(shippingAddress.phoneNumber || shippingAddress.phone || ''),
-    order: order._id.toString(),
+    // Use Order ID + Item ID suffix for unique identification in Delhivery (useful for partial shipments)
+    order: shipmentRequest.selectedItemIds && shipmentRequest.selectedItemIds.length > 0 
+           ? `${order._id.toString()}-${shipmentRequest.selectedItemIds[0].substring(shipmentRequest.selectedItemIds[0].length - 4)}`
+           : order._id.toString(),
     payment_mode: paymentMode,
     
     // Return address from warehouse
@@ -473,11 +496,11 @@ function createShipmentData(
     // Product and order details
     products_desc: cleanProductDescription(productsDesc || 'Order Items'),
     hsn_code: generateHSNForShipment(shipmentRequest, productsDesc),
-    cod_amount: codAmount,
+    cod_amount: finalCodAmount,
     order_date: order.createdAt ? new Date(order.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
     send_date: new Date().toISOString().split('T')[0], // CRITICAL: Current date for shipment
     end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // CRITICAL: 7 days from now
-    total_amount: totalAmount.toString(),
+    total_amount: finalTotalAmount,
     
     // Seller details
     seller_add: cleanAddress(warehouse.address || 'Default Seller Address', 
@@ -530,7 +553,7 @@ function createShipmentData(
   // Add MPS-specific fields
   if (shipmentRequest.shipmentType === 'MPS' && shipmentRequest.packages) {
     shipmentData.shipment_type = 'MPS';
-    shipmentData.mps_amount = mpsAmount.toString();
+    shipmentData.mps_amount = finalCodAmount;
     shipmentData.mps_children = shipmentRequest.packages.length.toString();
     
     // For MPS, master_id should be the same for all packages in the shipment
@@ -672,8 +695,22 @@ export async function POST(request: NextRequest) {
       weight, 
       dimensions, 
       packages,
-      customFields 
+      customFields,
+      selectedItemIds 
     } = body;
+    
+    // Create a shipment request object for helpers
+    const shipmentRequest: ShipmentCreateRequest = {
+      orderId,
+      shipmentType,
+      pickupLocation,
+      shippingMode: shippingMode || 'Surface',
+      weight,
+      dimensions,
+      packages,
+      customFields,
+      selectedItemIds
+    };
 
     console.log('[Shipment API] Request body:', body);
 
@@ -685,15 +722,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate and map pickup location to registered warehouse names
-    const registeredWarehouses = ['Main Warehouse', 'co-pal-test', 'co-pal-ul'];
-    let validPickupLocation = pickupLocation;
+    // Validate and check pickup location exists in database
+    const existingWarehouse = await Warehouse.findOne({ 
+      name: pickupLocation, 
+      status: 'active' 
+    }).lean();
     
-    // If pickup location is not in registered warehouses, use default
-    if (!registeredWarehouses.includes(pickupLocation)) {
-      console.log(`[Shipment API] Pickup location "${pickupLocation}" not in registered warehouses. Using default.`);
-      validPickupLocation = 'Main Warehouse'; // Use the main registered warehouse
+    if (!existingWarehouse) {
+      return NextResponse.json(
+        { success: false, error: `Warehouse "${pickupLocation}" not found. Please register it in Warehouse Management first.` },
+        { status: 400 }
+      );
     }
+    
+    let validPickupLocation = pickupLocation;
     
     if (!validPickupLocation) {
       return NextResponse.json(
@@ -728,25 +770,54 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate order status - allow different statuses based on shipment type
-    const allowedStatuses = shipmentType === 'REVERSE' 
-      ? ['Delivered', 'Completed'] 
-      : ['Confirmed', 'Processing', 'Dispatched'];
-      
-    if (!allowedStatuses.includes(order.status)) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: `Order must be in one of these statuses: ${allowedStatuses.join(', ')} for ${shipmentType} shipment` 
-        },
-        { status: 400 }
+    // Validate order status based on shipment type
+    if (shipmentType === 'REVERSE') {
+      const allowedReverse = ['Delivered', 'Completed', 'delivered', 'completed'];
+      if (!allowedReverse.includes(order.status)) {
+        return NextResponse.json(
+          { success: false, error: 'Reverse shipment requires the order to be Delivered or Completed first.' },
+          { status: 400 }
+        );
+      }
+    } else if (shipmentType === 'REPLACEMENT') {
+      const allowedReplacement = ['Delivered', 'Completed', 'delivered', 'completed'];
+      if (!allowedReplacement.includes(order.status)) {
+        return NextResponse.json(
+          { success: false, error: 'Replacement shipment requires the order to be Delivered or Completed first.' },
+          { status: 400 }
+        );
+      }
+    } else {
+      // FORWARD and MPS: Allow if there are unshipped items OR order is in any active state
+      // Do NOT block based on exact status string — items are the source of truth
+      const allItems = order.orderItems || order.products || [];
+      const hasAnyUnshippedItem = allItems.some((item: any) => 
+        !item.waybillNumber && item.status !== 'Dispatched' && item.status !== 'Delivered'
       );
+      
+      // Only block if all items are already shipped AND no specific items were selected
+      if (!hasAnyUnshippedItem && order.shipmentCreated && (!selectedItemIds || selectedItemIds.length === 0)) {
+        return NextResponse.json(
+          { success: false, error: 'All items in this order have already been shipped.' },
+          { status: 400 }
+        );
+      }
+
+      // Block only truly terminal statuses
+      const blockedStatuses = ['cancelled', 'Cancelled'];
+      if (blockedStatuses.includes(order.status)) {
+        return NextResponse.json(
+          { success: false, error: 'Cannot create a shipment for a cancelled order.' },
+          { status: 400 }
+        );
+      }
     }
 
-    // Check if shipment already created (except for reverse/replacement)
-    if (shipmentType === 'FORWARD' && order.shipmentCreated) {
+    // Check if shipment already created
+    // FORWARD: Allow multiple shipments if this is a partial shipment (splitting order)
+    if (shipmentType === 'FORWARD' && order.shipmentCreated && (!selectedItemIds || selectedItemIds.length === 0)) {
       return NextResponse.json(
-        { success: false, error: 'Forward shipment already created for this order' },
+        { success: false, error: 'Complete forward shipment already exists for this order. Use partial shipments to split.' },
         { status: 400 }
       );
     }
@@ -814,18 +885,34 @@ export async function POST(request: NextRequest) {
     // Get warehouse details using the validated pickup location
     const warehouse = await getWarehouseDetails(validPickupLocation);
 
+    // **BALANCE PROTECTION LOGIC**: Calculate remaining balance for this order
+    let remainingBalance = order.totalAmount || order.total || 0;
+    try {
+      const existingShipments = await Shipment.find({ orderId: order._id });
+      const totalAlreadyAssigned = existingShipments.reduce((sum, s: any) => {
+        // Use codAmount if available, fallback to packageDetails values
+        const codVal = parseFloat(s.packageDetails?.codAmount) || 0;
+        return sum + codVal;
+      }, 0);
+      
+      remainingBalance = Math.max(0, remainingBalance - totalAlreadyAssigned);
+      console.log(`[Shipment API] Remaining balance for order ${order._id}: ₹${remainingBalance} (Already assigned: ₹${totalAlreadyAssigned})`);
+    } catch (err) {
+      console.warn(`[Shipment API] Failed to fetch existing shipments for balance check:`, err);
+    }
+
     // Create shipment data based on type
     const shipments: DelhiveryShipmentData[] = [];
 
     if (shipmentType === 'MPS' && packages) {
-      // Create multiple shipments for MPS
+      // For MPS, we split the *remaining* balance across the new packages
       for (let i = 0; i < packages.length; i++) {
-        const shipmentData = createShipmentData(order, body, warehouse, i);
+        const shipmentData = createShipmentData(order, body, warehouse, i, remainingBalance);
         shipments.push(shipmentData);
       }
     } else {
-      // Create single shipment
-      const shipmentData = createShipmentData(order, body, warehouse);
+      // For single/partial shipment, use remaining balance
+      const shipmentData = createShipmentData(order, body, warehouse, undefined, remainingBalance);
       shipments.push(shipmentData);
     }
 
@@ -1105,11 +1192,17 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date()
     };
 
+    // Determine total items count for partial shipment detection
+    const allItems = order.orderItems?.length || order.products?.length || 0;
+    const isPartialShipment = shipmentRequest.selectedItemIds && 
+      shipmentRequest.selectedItemIds.length > 0 && 
+      shipmentRequest.selectedItemIds.length < allItems;
+
     // Update order based on shipment type
     switch (shipmentType) {
       case 'FORWARD':
         updateData.shipmentCreated = true;
-        updateData.status = 'Dispatched';
+        updateData.status = isPartialShipment ? 'Processing' : 'Dispatched';
         updateData.shipmentDetails = {
           waybillNumbers,
           pickupLocation,
@@ -1119,13 +1212,9 @@ export async function POST(request: NextRequest) {
           shipmentType: 'FORWARD',
           createdAt: new Date(),
           delhiveryResponse,
-          packages: packages || []
+          packages: packages || [],
+          selectedItemIds: shipmentRequest.selectedItemIds || []
         };
-        updateData['orderItems.$[].status'] = 'Dispatched';
-        updateData['orderItems.$[].waybillNumber'] = waybillNumbers[0];
-        updateData['products.$[].status'] = 'Dispatched';
-        updateData['products.$[].waybillNumber'] = waybillNumbers[0];
-
         break;
 
       case 'REVERSE':
@@ -1164,20 +1253,141 @@ export async function POST(request: NextRequest) {
           createdAt: new Date(),
           delhiveryResponse
         };
-        updateData['orderItems.$[].status'] = 'Dispatched';
-        updateData['orderItems.$[].waybillNumber'] = waybillNumbers[0];
-        updateData['products.$[].status'] = 'Dispatched';
-        updateData['products.$[].waybillNumber'] = waybillNumbers[0];
-
         break;
     }
 
-    // Update the order
-    const updatedOrder = await Order.findByIdAndUpdate(
+    // Step 1: Update order-level fields
+    let updatedOrder = await Order.findByIdAndUpdate(
       orderId,
       updateData,
       { new: true }
     );
+
+    // Step 2: Update item-level status and waybill numbers
+    if (shipmentType === 'FORWARD' || shipmentType === 'MPS') {
+      const mongoose = (await import('mongoose')).default;
+      
+      if (shipmentRequest.selectedItemIds && shipmentRequest.selectedItemIds.length > 0) {
+        // PARTIAL SHIPMENT: Only update selected items using arrayFilters
+        const idsToUpdate = shipmentRequest.selectedItemIds;
+        console.log(`[Shipment API] Partial shipment - updating ${idsToUpdate.length} items:`, idsToUpdate);
+        
+        // Convert string IDs to ObjectIds for accurate matching
+        const objectIds = idsToUpdate.map((id: string) => new mongoose.Types.ObjectId(id));
+        
+        // Update orderItems array
+        try {
+          await Order.updateOne(
+            { _id: orderId },
+            { 
+              $set: { 
+                'orderItems.$[elem].status': 'Dispatched',
+                'orderItems.$[elem].waybillNumber': waybillNumbers[0]
+              }
+            },
+            { 
+              arrayFilters: [{ 'elem._id': { $in: objectIds } }]
+            }
+          );
+        } catch (arrErr: any) {
+          console.log('[Shipment API] orderItems arrayFilter update skipped:', arrErr.message);
+        }
+
+        // Update products array (mirror)
+        try {
+          await Order.updateOne(
+            { _id: orderId },
+            { 
+              $set: { 
+                'products.$[elem].status': 'Dispatched',
+                'products.$[elem].waybillNumber': waybillNumbers[0]
+              }
+            },
+            { 
+              arrayFilters: [{ 'elem._id': { $in: objectIds } }]
+            }
+          );
+        } catch (arrErr: any) {
+          console.log('[Shipment API] products arrayFilter update skipped:', arrErr.message);
+        }
+
+        // Check if ALL items are now shipped - if so, set order to Dispatched
+        const refreshedOrder = await Order.findById(orderId).lean() as any;
+        const allItemsNow = refreshedOrder?.orderItems || refreshedOrder?.products || [];
+        const allDispatched = allItemsNow.length > 0 && allItemsNow.every((item: any) => 
+          item.status === 'Dispatched' || item.status === 'Delivered'
+        );
+        
+        if (allDispatched) {
+          console.log('[Shipment API] All items dispatched, updating order status to Dispatched');
+          updatedOrder = await Order.findByIdAndUpdate(
+            orderId,
+            { status: 'Dispatched' },
+            { new: true }
+          );
+        }
+      } else {
+        // FULL SHIPMENT: Update all items
+        console.log('[Shipment API] Full shipment - updating all items');
+        await Order.updateOne(
+          { _id: orderId },
+          { 
+            $set: { 
+              'orderItems.$[].status': 'Dispatched',
+              'orderItems.$[].waybillNumber': waybillNumbers[0],
+              'products.$[].status': 'Dispatched',
+              'products.$[].waybillNumber': waybillNumbers[0]
+            }
+          }
+        );
+      }
+      
+      // PERSISTENT SHIPMENT RECORD CREATION
+      try {
+        const orderForShipment = await Order.findById(orderId).lean() as any;
+        const shippingAddr = orderForShipment.shippingAddress || {};
+        
+        // Create actual Shipment document for history/dashboard
+        await Shipment.create({
+          orderId: orderId,
+          waybillNumbers: waybillNumbers,
+          primaryWaybill: waybillNumbers[0],
+          shipmentType: shipmentType,
+          status: 'Created',
+          pickupLocation: validPickupLocation,
+          warehouse: {
+            name: validPickupLocation,
+            address: '--',
+            pincode: '--',
+            phone: '--'
+          },
+          customerDetails: {
+            name: `${shippingAddr.firstName || ''} ${shippingAddr.lastName || ''}`.trim() || 'Unknown',
+            phone: shippingAddr.phoneNumber || shippingAddr.phone || '',
+            address: `${shippingAddr.address1 || ''} ${shippingAddr.address2 || ''}`.trim(),
+            city: shippingAddr.city || '',
+            state: shippingAddr.state || '',
+            pincode: shippingAddr.zipCode || ''
+          },
+          packageDetails: {
+            weight: shipmentRequest.weight || 500,
+            dimensions: shipmentRequest.dimensions || { length: 10, width: 10, height: 10 },
+            productDescription: 'Store Shipment',
+            paymentMode: orderForShipment.paymentMethod?.toUpperCase() === 'COD' ? 'COD' : 'Pre-paid',
+            codAmount: orderForShipment.paymentMethod?.toUpperCase() === 'COD' ? (orderForShipment.total || orderForShipment.totalAmount || 0) : 0
+          },
+          delhiveryResponse: delhiveryResponse,
+          isActive: true
+        });
+        console.log(`[Shipment API] SUCCESS: Created persistent Shipment record for ${waybillNumbers[0]}`);
+      } catch (shipErr: any) {
+        console.error('[Shipment API] ERROR creating Shipment record:', shipErr.message);
+        // We don't fail the entire request if just the shipment log fails, but it's bad
+      }
+
+      // Refetch to get latest
+      updatedOrder = await Order.findById(orderId).lean() as any;
+    }
 
     console.log('[Shipment API] Order updated successfully');
 
@@ -1238,9 +1448,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Find the order with shipment details
+    // Find the order with shipment details and populate product info
     const order = await Order.findById(orderId)
       .select('_id status shipmentCreated shipmentDetails reverseShipment replacementShipment orderItems products')
+      .populate({
+        path: 'orderItems.product',
+        select: 'shippingDimensions name'
+      })
       .lean() as any;
 
     if (!order) {
@@ -1250,48 +1464,121 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Calculate total weight and dimensions
+    let calculatedTotalWeight = 0;
+    
+    // Safety check: some orders use orderItems, some use products
+    const items = (order.orderItems && order.orderItems.length > 0) 
+      ? order.orderItems 
+      : (order.products && order.products.length > 0) 
+        ? order.products 
+        : [];
+    
+    console.log(`[Shipment API] Calculating weight for order ${orderId}, items count: ${items.length}, source: ${order.orderItems?.length > 0 ? 'orderItems' : 'products'}`);
+    
+    items.forEach((item: any, index: number) => {
+      const qty = item.qty || item.quantity || 1;
+      const productWeight = item.product?.shippingDimensions?.weight || 0;
+      const unit = item.product?.shippingDimensions?.unit || 'kg';
+      
+      // Convert to grams for Delhivery
+      const weightInGrams = unit.toLowerCase().includes('kg') ? productWeight * 1000 : productWeight;
+      const itemTotalWeight = (weightInGrams * qty);
+      calculatedTotalWeight += itemTotalWeight;
+      
+      console.log(`[Shipment API] Item ${index}: Name="${item.name}", Qty=${qty}, ProductWeight=${productWeight}, Unit="${unit}", Grams=${weightInGrams}, total=${itemTotalWeight}`);
+    });
+
+    // Build enriched items with image, name, weight, dimensions for frontend
+    const enrichedItems = items.map((item: any) => {
+      const qty = item.qty || item.quantity || 1;
+      const productWeight = item.product?.shippingDimensions?.weight || 0;
+      const unit = item.product?.shippingDimensions?.unit || 'kg';
+      const weightInGrams = unit.toLowerCase().includes('kg') ? productWeight * 1000 : productWeight;
+      const dims = item.product?.shippingDimensions || {};
+
+      return {
+        _id: item._id?.toString(),
+        name: item.product?.name || item.name || 'Product',
+        image: item.product?.images?.[0]?.url || item.image || null,
+        qty,
+        price: item.price || 0,
+        size: item.size || null,
+        color: item.color || null,
+        status: item.status || 'Not Processed',
+        waybillNumber: item.waybillNumber || null,
+        // Per-item weight in grams (for selected items calculation)
+        weightPerUnit: weightInGrams > 0 ? weightInGrams : 500,
+        weightTotal: weightInGrams > 0 ? Math.round(weightInGrams * qty) : 500 * qty,
+        // Per-item dimensions (cm)
+        dimensions: {
+          length: dims.length || 10,
+          width: dims.width || 10,
+          height: dims.height || 10,
+        }
+      };
+    });
+
+    // Final rounding to avoid float precision issues
+    calculatedTotalWeight = Math.round(calculatedTotalWeight);
+
+    // If calculation result is 0 (missing data), fallback to 500g
+    if (calculatedTotalWeight === 0) {
+      console.log(`[Shipment API] Weight calculated as 0, using fallback of 500g`);
+      calculatedTotalWeight = 500;
+    }
+    
+    console.log(`[Shipment API] Final calculated weight: ${calculatedTotalWeight}g`);
+
     // Get available warehouses for pickup location options
     const warehouses = await Warehouse.find({ status: 'active' })
-      .select('name city state')
+      .select('name city state pin phone address')
       .lean();
 
     // Determine what shipment actions are available
-    const availableActions = [];
+    const availableActions: string[] = [];
     
-    // Forward shipment
-    if (!order.shipmentCreated && ['Confirmed', 'Processing'].includes(order.status)) {
+    // Check if there are unshipped items remaining (item status is the source of truth)
+    const hasUnshippedItems = items.some((item: any) => !item.waybillNumber && item.status !== 'Dispatched' && item.status !== 'Delivered');
+    const isCancelled = ['cancelled', 'Cancelled'].includes(order.status);
+    const isDelivered  = ['delivered', 'Delivered', 'completed', 'Completed'].includes(order.status);
+    
+    // FORWARD shipment: available whenever there are unshipped items and order isn't cancelled
+    if (hasUnshippedItems && !isCancelled) {
       availableActions.push('FORWARD');
     }
     
-    // Reverse shipment (only if order is delivered and no reverse shipment exists)
-    if (['Delivered', 'Completed'].includes(order.status) && !order.reverseShipment) {
+    // MPS (multi-package): same rules as FORWARD
+    if (hasUnshippedItems && !isCancelled) {
+      availableActions.push('MPS');
+    }
+    
+    // Reverse shipment: only after delivery, only once
+    if (isDelivered && !order.reverseShipment) {
       availableActions.push('REVERSE');
     }
     
-    // Replacement shipment (only if order is delivered and no replacement shipment exists)
-    if (['Delivered', 'Completed'].includes(order.status) && !order.replacementShipment) {
+    // Replacement shipment: only after delivery, only once
+    if (isDelivered && !order.replacementShipment) {
       availableActions.push('REPLACEMENT');
-    }
-    
-    // MPS shipment (similar to forward but for multi-package)
-    if (!order.shipmentCreated && ['Confirmed', 'Processing'].includes(order.status)) {
-      availableActions.push('MPS');
     }
 
     return NextResponse.json({
       success: true,
       data: {
         orderId: order._id,
+        order: order, // Include full order for frontend access
+        orderItems: enrichedItems, // Enriched with name, image, weight, dimensions per item
         status: order.status,
         shipmentCreated: order.shipmentCreated || false,
         shipmentDetails: order.shipmentDetails,
         reverseShipment: order.reverseShipment,
         replacementShipment: order.replacementShipment,
         availableActions,
-        warehouses: warehouses.map(w => ({
-          name: w.name,
-          location: `${w.city}, ${w.state}`
-        })),
+        calculatedTotalWeight,
+        paymentMethod: order.paymentMethod,
+        totalAmount: order.total || order.totalAmount,
+        warehouses: warehouses,
         canCreateShipment: availableActions.length > 0
       }
     });

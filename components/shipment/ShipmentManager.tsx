@@ -25,12 +25,14 @@ import type {
 
 interface ShipmentManagerProps {
   orderId: string;
+  preSelectedItemId?: string;
   onShipmentCreated?: (data: any) => void;
   className?: string;
 }
 
 export default function ShipmentManager({
   orderId,
+  preSelectedItemId,
   onShipmentCreated,
   className = ''
 }: ShipmentManagerProps) {
@@ -53,6 +55,7 @@ export default function ShipmentManager({
       width: 10,
       height: 10
     },
+    selectedItemIds: preSelectedItemId ? [preSelectedItemId] : undefined,
     customFields: {
       fragile_shipment: false,
       dangerous_good: false,

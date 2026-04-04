@@ -768,6 +768,10 @@ function Row(props: RowProps) { // Use defined RowProps
                                 orderId={row._id}
                                 orderStatus={row.status}
                                 shipmentCreated={row.shipmentCreated}
+                                itemId={productId}
+                                itemName={p.product?.name || p.name || 'Product'}
+                                itemShipped={currentItemStatus === 'Dispatched' || currentItemStatus === 'Delivered'}
+                                itemWaybill={p.waybillNumber}
                                 className="text-sm"
                               />
                             </div>

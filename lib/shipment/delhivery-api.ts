@@ -736,18 +736,10 @@ export class DelhiveryAPI {
   async fetchWarehouses(): Promise<any[]> {
     // Try the most likely endpoints first
     const warehouseEndpoints = [
-      '/api/backend/clientwarehouse/',
+      '/api/v1/packages/fetch/pickup-locations/',
+      '/api/v1/packages/fetch/pickup-locations/?format=json',
       '/api/backend/clientwarehouse/list/',
-      '/api/backend/clientwarehouse/get/',
-      '/api/backend/warehouse/',
-      '/api/backend/warehouse/list/',
-      '/api/cmu/warehouse/',
-      '/api/warehouse/',
-      '/api/v1/warehouse/',
-      '/warehouse/api/list/',
-      '/api/pickup/warehouse/',
-      '/api/pickup/location/',
-      '/api/pickup/locations/'
+      '/api/cmu/warehouse/list/'
     ];
     
     for (const endpoint of warehouseEndpoints) {
@@ -766,73 +758,28 @@ export class DelhiveryAPI {
 
         if (response.ok) {
           const result = await response.json();
-          console.log(`[Delhivery API] Successfully fetched warehouses from ${endpoint}:`, result);
+          console.log(`[Delhivery API] Successfully fetched warehouses from ${endpoint}`);
           
-          // Handle different response formats
+          let locations = [];
           if (Array.isArray(result)) {
-            return result;
+            locations = result;
           } else if (result.data && Array.isArray(result.data)) {
-            return result.data;
-          } else if (result.warehouses && Array.isArray(result.warehouses)) {
-            return result.warehouses;
-          } else if (result.results && Array.isArray(result.results)) {
-            return result.results;
+            locations = result.data;
           } else if (result.pickup_locations && Array.isArray(result.pickup_locations)) {
-            return result.pickup_locations;
+            locations = result.pickup_locations;
+          } else if (result.warehouses && Array.isArray(result.warehouses)) {
+            locations = result.warehouses;
           }
-        } else if (response.status === 404) {
-          console.log(`[Delhivery API] Endpoint ${endpoint} not found, trying next`);
-          continue;
-        } else {
-          const errorText = await response.text();
-          console.log(`[Delhivery API] Endpoint ${endpoint} returned error:`, response.status, errorText.substring(0, 200));
-          continue;
+
+          if (locations.length > 0) return locations;
         }
       } catch (error) {
         console.log(`[Delhivery API] Error with endpoint ${endpoint}:`, error);
-        continue;
       }
     }
     
-    console.log('[Delhivery API] No warehouse endpoint worked, returning default warehouses');
-    
-    // Return default warehouses if API doesn't work
-    return [
-      {
-        name: 'Main Warehouse',
-        warehouse_name: 'Main Warehouse',
-        address: 'Main Warehouse Address',
-        warehouse_address: 'Main Warehouse Address',
-        pin: '400001',
-        pincode: '400001',
-        warehouse_pin: '400001',
-        phone: '+919876543210',
-        warehouse_phone: '+919876543210',
-        city: 'Mumbai',
-        warehouse_city: 'Mumbai',
-        state: 'Maharashtra',
-        warehouse_state: 'Maharashtra',
-        active: true,
-        status: 'active'
-      },
-      {
-        name: 'Delhi Hub',
-        warehouse_name: 'Delhi Hub',
-        address: 'Delhi Hub Address',
-        warehouse_address: 'Delhi Hub Address',
-        pin: '110001',
-        pincode: '110001',
-        warehouse_pin: '110001',
-        phone: '+919876543211',
-        warehouse_phone: '+919876543211',
-        city: 'Delhi',
-        warehouse_city: 'Delhi',
-        state: 'Delhi',
-        warehouse_state: 'Delhi',
-        active: true,
-        status: 'active'
-      }
-    ];
+    console.log('[Delhivery API] No warehouse endpoint worked, returning empty array');
+    return [];
   }
 
   /**
@@ -2235,7 +2182,8 @@ export class DelhiveryAPI {
       method: 'GET',
       headers: {
         'Authorization': `Token ${this.token}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Accept': 'application/pdf, application/json'
       }
     });
 
@@ -2246,10 +2194,21 @@ export class DelhiveryAPI {
     }
 
     if (pdf) {
-      // For PDF, return the response text (which should be a URL or PDF data)
-      const result = await response.text();
-      console.log('[Delhivery API] PDF label generated successfully');
-      return result;
+      // For PDF, the B2C API returns a JSON string with an S3 link: {"url": "...", "success": true}
+      const responseText = await response.text();
+      try {
+        const jsonResult = JSON.parse(responseText);
+        if (jsonResult.url) {
+          console.log('[Delhivery API] PDF label URL extracted from JSON');
+          return jsonResult.url;
+        }
+        // Fallback to text if URL field is missing
+        return responseText;
+      } catch (e) {
+        // If not JSON, it might be the raw HTML content (legacy B2C behaviour)
+        console.log('[Delhivery API] Label response is not JSON, returning raw text/HTML');
+        return responseText;
+      }
     } else {
       // For JSON, return the parsed response
       const result = await response.json();

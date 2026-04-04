@@ -181,7 +181,7 @@ const navigationItems: NavSection[] = [
     title: "Logistics",
     items: [
       {
-        href: "/admin/warehouse",
+        href: "/admin/dashboard/warehouse",
         icon: <FaWarehouse size={20} />,
         label: "Warehouse Management"
       },

@@ -119,10 +119,53 @@ export default function ShipmentManagement() {
   const [documentType, setDocumentType] = useState('SIGNATURE_URL');
   const [documentWaybill, setDocumentWaybill] = useState('');
   const [testMode, setTestMode] = useState(false); // Add test mode
+  
+  // Warehouse state
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [fetchingWarehouses, setFetchingWarehouses] = useState(false);
 
   useEffect(() => {
     fetchShipments();
+    fetchWarehouses();
   }, [currentPage, statusFilter, typeFilter, searchTerm]);
+
+  const fetchWarehouses = async () => {
+    try {
+      setFetchingWarehouses(true);
+      const response = await fetch('/api/warehouse');
+      const result = await response.json();
+      if (result.success) {
+        setWarehouses(result.data);
+      }
+    } catch (err) {
+      console.error('Error fetching warehouses:', err);
+    } finally {
+      setFetchingWarehouses(false);
+    }
+  };
+
+  const handleSyncWarehouses = async () => {
+    try {
+      setFetchingWarehouses(true);
+      setSuccess('Syncing warehouses from Delhivery...');
+      const response = await fetch('/api/warehouse/sync', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const result = await response.json();
+      if (result.success) {
+        await fetchWarehouses();
+        setSuccess(result.message || 'Warehouses synced successfully');
+      } else {
+        setError(result.error || 'Failed to sync warehouses');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Error syncing warehouses');
+    } finally {
+      setFetchingWarehouses(false);
+      setTimeout(() => setSuccess(null), 3000);
+    }
+  };
 
   const fetchShipments = async () => {
     try {
@@ -214,8 +257,9 @@ export default function ShipmentManagement() {
     }
   };
 
-  const handleGenerateLabel = (waybill: string) => {
-    setSelectedWaybill(waybill);
+  const handleGenerateLabel = (shipment: Shipment) => {
+    setSelectedWaybill(shipment.primaryWaybill);
+    setSelectedShipment(shipment);
     setShowLabelGenerator(true);
   };
 
@@ -263,7 +307,26 @@ export default function ShipmentManagement() {
       }
     } catch (err: any) {
       console.error('Error creating pickup request:', err);
-      setError(err.message || 'Failed to create pickup request');
+      let errorMessage = err.message || 'Failed to create pickup request';
+      
+      // Special handling for wallet balance errors
+      if (errorMessage.toLowerCase().includes('wallet balance') || errorMessage.toLowerCase().includes('prepaid')) {
+        try {
+          // Attempt to parse the error if it contains JSON
+          const jsonPart = errorMessage.includes('{') ? errorMessage.substring(errorMessage.indexOf('{')) : '';
+          const jsonError = jsonPart ? JSON.parse(jsonPart) : {};
+          
+          if (jsonError.prepaid) {
+            errorMessage = `Insufficient Delhivery Wallet Balance: ${jsonError.prepaid}. Please recharge your Delhivery account to at least ₹500.`;
+          } else {
+            errorMessage = 'Insufficient Delhivery Wallet Balance. Please recharge your account to at least ₹500.';
+          }
+        } catch (e) {
+          errorMessage = 'Insufficient Delhivery Wallet Balance. Please recharge your Delhivery account.';
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setEditLoading(false);
     }
@@ -586,11 +649,16 @@ export default function ShipmentManagement() {
                           <div>
                             <strong>Customer:</strong> {shipment.customerDetails.name}
                           </div>
-                          <div>
-                            <strong>Order:</strong> {shipment.orderId.customerName} (₹{shipment.orderId.total})
+                          <div className="md:col-span-1">
+                            <strong>Products:</strong> {shipment.packageDetails.productDescription?.split(' (#')[0] || 'General Items'}
+                            {shipment.packageDetails.productDescription?.includes('(#') && (
+                              <span className="ml-2 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">
+                                Item: {shipment.packageDetails.productDescription.split('(#')[1].replace(')', '')}
+                              </span>
+                            )}
                           </div>
                           <div>
-                            <strong>Pickup:</strong> {shipment.pickupLocation}
+                            <strong>Order Ref:</strong> {shipment.orderId?._id ? `...${shipment.orderId._id.slice(-8)}` : (shipment.orderId?.toString().slice(-8) || 'N/A')}
                           </div>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-gray-600 mt-1">
@@ -609,11 +677,20 @@ export default function ShipmentManagement() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleGenerateLabel(shipment.primaryWaybill)}
+                          onClick={() => handleGenerateLabel(shipment)}
                           className="flex items-center gap-1"
                         >
                           <FileText className="h-4 w-4" />
                           Label
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => window.open(`/admin/dashboard/orders/invoice/${shipment.orderId?._id || shipment.orderId}?waybill=${shipment.primaryWaybill}`, '_blank')}
+                          className="flex items-center gap-1 border-purple-200 text-purple-700 hover:bg-purple-50"
+                        >
+                          <FileText className="h-4 w-4" />
+                          Bill
                         </Button>
                         <Button
                           size="sm"
@@ -839,6 +916,7 @@ export default function ShipmentManagement() {
         isOpen={showLabelGenerator}
         onClose={() => setShowLabelGenerator(false)}
         waybill={selectedWaybill}
+        shipment={selectedShipment}
         onSuccess={handleLabelSuccess}
         onError={handleLabelError}
       />
@@ -854,13 +932,38 @@ export default function ShipmentManagement() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="pickup_location">Pickup Location (Warehouse)</Label>
-              <Input
-                id="pickup_location"
-                placeholder="Enter registered warehouse name"
+              <div className="flex items-center justify-between mb-2">
+                <Label htmlFor="pickup_location">Pickup Location (Warehouse)</Label>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 gap-1 text-xs text-blue-600 hover:text-blue-800"
+                  onClick={handleSyncWarehouses}
+                  disabled={fetchingWarehouses}
+                >
+                  <RefreshCw className={`h-3 w-3 ${fetchingWarehouses ? 'animate-spin' : ''}`} />
+                  Sync All
+                </Button>
+              </div>
+              <Select
                 value={pickupFormData.pickup_location}
-                onChange={(e) => setPickupFormData({ ...pickupFormData, pickup_location: e.target.value })}
-              />
+                onValueChange={(value) => setPickupFormData({ ...pickupFormData, pickup_location: value })}
+              >
+                <SelectTrigger id="pickup_location">
+                  <SelectValue placeholder={fetchingWarehouses ? "Loading..." : "Select registered warehouse"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {warehouses.length > 0 ? (
+                    warehouses.map((w, idx) => (
+                      <SelectItem key={idx} value={w.name}>
+                        {w.name} ({w.city})
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <div className="p-2 text-sm text-gray-500">No warehouses found. Click Sync.</div>
+                  )}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -1032,6 +1135,13 @@ export default function ShipmentManagement() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            <Alert className="bg-blue-50 border-blue-200">
+              <AlertCircle className="h-4 w-4 text-blue-600" />
+              <AlertDescription className="text-blue-800">
+                Documents like <strong>EPOD</strong> and <strong>Signatures</strong> are generated by Delhivery only <strong>after</strong> the shipment is successfully delivered.
+              </AlertDescription>
+            </Alert>
+            
             <div>
               <Label htmlFor="document_waybill">Waybill Number</Label>
               <Input
@@ -1048,9 +1158,9 @@ export default function ShipmentManagement() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="SIGNATURE_URL">Signature (Available after delivery)</SelectItem>
-                  <SelectItem value="EPOD">EPOD - Electronic Proof of Delivery</SelectItem>
-                  <SelectItem value="RVP_QC_IMAGE">RVP QC Image - Quality Check</SelectItem>
+                  <SelectItem value="SIGNATURE_URL">Proof of Delivery Signature</SelectItem>
+                  <SelectItem value="EPOD">Electronic POD (Digital Note)</SelectItem>
+                  <SelectItem value="RVP_QC_IMAGE">Reverse QC Image (For Returns)</SelectItem>
                   <SelectItem value="SELLER_RETURN_IMAGE">Seller Return Image</SelectItem>
                 </SelectContent>
               </Select>

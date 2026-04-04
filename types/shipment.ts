@@ -36,6 +36,7 @@ export interface ShipmentCreateRequest {
   auto_hsn_code?: string;
   auto_waybill?: string;
   productCategory?: string;
+  selectedItemIds?: string[];
 }
 
 export interface ShipmentDetails {
@@ -57,6 +58,7 @@ export interface WarehouseInfo {
   name: string;
   address: string;
   pincode: string;
+  pin?: string; // For compatibility with Warehouse model
   phone: string;
   active: boolean;
   location?: string; // For backward compatibility
