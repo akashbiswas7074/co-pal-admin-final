@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     // Create session token manually without relying on SignJWT
     // This sets regular cookies for auth instead of trying to create NextAuth tokens
     cookieStore.set({
-      name: 'next-auth.csrf-token',
+      name: 'admin-next-auth.csrf-token',
       value: `${Math.random().toString(36).substring(2, 15)}%${Math.random().toString(36).substring(2, 15)}`,
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     
     // Set a session token that indicates the user is logged in
     cookieStore.set({
-      name: 'next-auth.callback-url',
+      name: 'admin-next-auth.callback-url',
       value: '/admin/dashboard',
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
