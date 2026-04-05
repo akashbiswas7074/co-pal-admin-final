@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { calculateShippingCharge } from "../utils/shipping";
+import { calculateShippingCharge } from "@/lib/utils/shipping";
 const { ObjectId } = mongoose.Schema;
 
 // Define item schema for better maintainability
@@ -60,6 +60,10 @@ const OrderItemSchema = new mongoose.Schema({
     trim: true,
   },
   trackingId: { // New field for tracking ID
+    type: String,
+    trim: true,
+  },
+  waybillNumber: { // New field for waybill number
     type: String,
     trim: true,
   },
@@ -225,6 +229,23 @@ const orderSchema = new mongoose.Schema(
         'Completed'
       ],
       default: 'pending',
+    },
+    // Shipment related fields
+    shipmentCreated: {
+      type: Boolean,
+      default: false,
+    },
+    shipmentDetails: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+    reverseShipment: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+    replacementShipment: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
     },
   },
   {

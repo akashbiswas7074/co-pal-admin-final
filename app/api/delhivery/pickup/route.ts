@@ -61,7 +61,18 @@ export async function POST(request: NextRequest) {
     console.log('[Delhivery Pickup API] Response:', responseText);
 
     if (!response.ok) {
-      throw new Error(`Delhivery API error: ${response.status} - ${responseText}`);
+      let errorDetail = responseText;
+      try {
+        const errorJson = JSON.parse(responseText);
+        if (errorJson.prepaid) errorDetail = errorJson.prepaid;
+        else if (errorJson.message) errorDetail = errorJson.message;
+      } catch (e) {
+        // Not JSON, use raw text
+      }
+      return NextResponse.json({
+        success: false,
+        error: `Delhivery API error: ${errorDetail}`
+      }, { status: 400 });
     }
 
     let result;

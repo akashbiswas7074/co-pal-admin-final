@@ -10,6 +10,7 @@ const ShipmentSchema = new mongoose.Schema(
       required: true,
       index: true
     },
+    selectedItemIds: [String],
     waybillNumbers: [{
       type: String,
       required: true

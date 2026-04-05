@@ -37,6 +37,8 @@ export interface ShipmentCreateRequest {
   auto_waybill?: string;
   productCategory?: string;
   selectedItemIds?: string[];
+  productDescription?: string;
+  totalAmount?: number;
 }
 
 export interface ShipmentDetails {

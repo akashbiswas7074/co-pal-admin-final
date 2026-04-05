@@ -3,13 +3,13 @@
  * Handles all shipment-related business logic
  */
 
+import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/database/connect';
 import Order from '@/lib/database/models/order.model';
 import Warehouse from '@/lib/database/models/warehouse.model';
 import Shipment from '@/lib/database/models/shipment.model';
 import { delhiveryAPI } from './delhivery-api';
 import { waybillService } from './waybill-service';
-import { generateHSNCode, generateHSNFromDescription } from '@/lib/utils/hsn-code-generator';
 import Product from '@/lib/database/models/product.model';
 import type {
   ShipmentCreateRequest,
@@ -52,10 +52,10 @@ export class ShipmentService {
       } else {
         // FORWARD and MPS: Validate against items, not just top-level status
         const allItems = order.orderItems || order.products || [];
-        const hasAnyUnshippedItem = allItems.some((item: any) => 
+        const hasAnyUnshippedItem = allItems.some((item: any) =>
           !item.waybillNumber && item.status !== 'Dispatched' && item.status !== 'Delivered'
         );
-        
+
         if (!hasAnyUnshippedItem && order.shipmentCreated && (!request.selectedItemIds || request.selectedItemIds.length === 0)) {
           throw new Error('All items in this order have already been shipped.');
         }
@@ -123,18 +123,24 @@ export class ShipmentService {
       // Calculate subtotal for the selected items only (split shipment support)
       const allItems = order.orderItems || order.products || [];
       const isPartialSelection = request.selectedItemIds && request.selectedItemIds.length > 0;
-      const selectedItems = isPartialSelection 
+      const selectedItems = isPartialSelection
         ? allItems.filter((item: any) => request.selectedItemIds?.includes(item._id.toString()))
         : allItems;
 
-      const shipmentSubtotal = selectedItems.reduce((sum: number, item: any) => {
-        const price = typeof item.price === 'number' ? item.price : parseFloat(item.price) || 0;
-        const quantity = typeof item.qty === 'number' ? item.qty : (typeof item.quantity === 'number' ? item.quantity : 1);
-        return sum + (price * quantity);
-      }, 0);
+      const shipmentSubtotal = request.totalAmount || 0;
+
+      // Calculate sequence number by checking BOTH successful shipments and order history
+      // This ensures retries after failures also increment the ID correctly
+      const shipments = await Shipment.find({ 
+        orderId: order._id, 
+        isActive: { $ne: false } 
+      }).lean();
+      const successfulShipments = shipments.length;
+      const historyShipments = (order.shipmentDetails?.history?.length || 0);
+      const shipmentNumber = Math.max(successfulShipments, historyShipments) + 1;
 
       // Create shipment data with calculated subtotal and filtered items
-      const shipmentData = this.createShipmentData(order, request, warehouse, undefined, shipmentSubtotal, selectedItems);
+      const shipmentData = this.createShipmentData(order, request, warehouse, undefined, shipmentSubtotal, selectedItems, shipmentNumber);
 
       // Debug: Log the created shipment data
       console.log('[Shipment Service] Created shipment data:', {
@@ -155,7 +161,7 @@ export class ShipmentService {
       const delhiveryPayload: DelhiveryCreatePayload = {
         shipments: request.shipmentType === 'MPS' && request.packages && request.packages.length > 0
           ? request.packages.map((pkg, index) => {
-            const packageShipmentData = this.createShipmentData(order, request, warehouse, index, shipmentSubtotal, selectedItems);
+            const packageShipmentData = this.createShipmentData(order, request, warehouse, index, shipmentSubtotal, selectedItems, shipmentNumber);
             // Debug: Log package shipment data
             console.log(`[Shipment Service] Package ${index + 1} shipment data:`, {
               order: packageShipmentData.order,
@@ -328,6 +334,7 @@ export class ShipmentService {
 
         const shipmentData = {
           orderId: request.orderId,
+          selectedItemIds: request.selectedItemIds || [],
           waybillNumbers,
           primaryWaybill: waybillNumbers[0],
           shipmentType: request.shipmentType,
@@ -484,23 +491,43 @@ export class ShipmentService {
    */
   async getShipmentDetails(orderId: string) {
     try {
+      // - [x] Validate Order ID in `getShipmentDetails`
+      // - [x] Fetch associated shipments in `getShipmentDetails`
+      // - [x] Update item status mapping logic to include shipment data
+      // - [x] Handle invalid Order ID in `app/api/shipment/route.ts`
+      // - [x] Verify fix in API response
+      // - [/] Verify fix in UI
       await connectToDatabase();
+
+      // Validate Order ID
+      if (!mongoose.Types.ObjectId.isValid(orderId)) {
+        throw new Error(`Invalid Order ID: ${orderId}`);
+      }
 
       const order = await Order.findById(orderId)
         .populate({
           path: 'orderItems.product',
           model: Product,
-          select: 'shippingDimensions weight'
+          select: 'shippingDimensions weight name price images'
         })
         .populate({
           path: 'products.product',
           model: Product,
-          select: 'shippingDimensions weight'
+          select: 'shippingDimensions weight name price images'
         });
 
       if (!order) {
         throw new Error('Order not found');
       }
+
+      // Fetch all shipments for this order to cross-reference statuses
+      const shipments = await Shipment.find({ 
+        $or: [
+          { orderId: orderId },
+          { orderId: new mongoose.Types.ObjectId(orderId) }
+        ],
+        isActive: { $ne: false } // Include legacy where isActive might be null
+      }).sort({ createdAt: -1 });
 
       // Calculate total weight and dimensions from products
       let totalWeight = 0;
@@ -587,9 +614,81 @@ export class ShipmentService {
             },
             productDescription // Return the generated description
           },
+          totalAmount: order.totalAmount, // Return total amount for user to edit
           availableActions,
-          warehouses: warehouses || [],
-          canCreateShipment: availableActions.length > 0
+          warehouses: (warehouses || []).map((w: any) => ({
+            name: w.name,
+            location: w.location || w.warehouse_location || w.city || 'Default'
+          })),
+          canCreateShipment: availableActions.length > 0,
+          orderItems: items.map((item: any) => {
+            const prod = item.product || {};
+            const dims = prod.shippingDimensions || { length: 10, breadth: 10, height: 10 };
+            const weight = prod.shippingDimensions?.weight || 0.5; // kg
+            const qty = item.qty || item.quantity || 1;
+            const itemIdStr = item._id ? item._id.toString() : (item.id ? item.id.toString() : '');
+            
+            // Find all matching shipments for this item
+            const matchingShipments = shipments.filter(s => 
+              (s.selectedItemIds && s.selectedItemIds.length > 0)
+                ? s.selectedItemIds.some((id: any) => id.toString() === itemIdStr)
+                : true // Legacy fallback
+            );
+
+            // Prioritize statuses: DELIVERED > DISPATCHED > PROCESSING > OTHERS
+            let relevantShipment = matchingShipments[0]; // default to newest
+            const priority = ['DELIVERED', 'DISPATCHED', 'MANIFESTED', 'IN-TRANSIT', 'CREATED'];
+            
+            for (const s of matchingShipments) {
+              const currentStatus = (s.status || '').toUpperCase();
+              const relevantStatus = (relevantShipment?.status || '').toUpperCase();
+              
+              const currentIdx = priority.indexOf(currentStatus);
+              const relevantIdx = priority.indexOf(relevantStatus);
+              
+              if (currentIdx !== -1 && (relevantIdx === -1 || currentIdx < relevantIdx)) {
+                relevantShipment = s;
+              }
+            }
+
+            // Determine display status based on shipment presence
+            let displayStatus = item.status || order.status || 'Pending';
+            let waybillNumber = item.waybillNumber || null;
+
+            if (relevantShipment) {
+              waybillNumber = relevantShipment.waybillNumbers?.[0] || waybillNumber;
+              
+              const sStatus = relevantShipment.status;
+              if (sStatus === 'Created' || sStatus === 'CREATED') displayStatus = 'Processing';
+              else if (['PICKUP_PENDING', 'PICKUP_SCHEDULED', 'MANIFEST_GENERATED', 'Dispatched', 'DISPATCHED', 'Manifested', 'MANIFESTED'].includes(sStatus)) displayStatus = 'Dispatched';
+              else if (['IN_TRANSIT', 'OUT_FOR_DELIVERY', 'In Transit', 'In-Transit'].includes(sStatus)) displayStatus = 'In Transit';
+              else if (['DELIVERED', 'Delivered'].includes(sStatus)) displayStatus = 'Delivered';
+              else if (['CANCELLED', 'Cancelled'].includes(sStatus)) displayStatus = 'Cancelled';
+              else displayStatus = sStatus;
+            } else if (displayStatus === 'Not Processed' || displayStatus === 'NOT PROCESSED') {
+              displayStatus = 'Pending';
+            }
+            
+            return {
+              _id: itemIdStr,
+              name: prod.name || item.name || 'Unknown Item',
+              image: prod.images?.[0] || prod.image || item.image || null,
+              qty: qty,
+              price: item.price || prod.price || 0,
+              size: item.size || null,
+              color: item.color || null,
+              status: displayStatus,
+              waybillNumber: waybillNumber,
+              weightPerUnit: Math.round(weight * 1000), // g
+              weightTotal: Math.round(weight * 1000 * qty), // g
+              dimensions: {
+                length: dims.length || 10,
+                width: dims.breadth || dims.width || 10,
+                height: dims.height || 10
+              }
+            };
+          }),
+          calculatedTotalWeight: totalWeight
         }
       };
     } catch (error: any) {
@@ -690,51 +789,51 @@ export class ShipmentService {
       // ENRICHMENT: Fetch local shipment data to provide missing PIN/Address/Price
       let enrichedData = labelData;
       try {
-          const localShipment = await Shipment.findOne({ 
-              $or: [
-                  { primaryWaybill: waybill }, 
-                  { waybillNumbers: waybill }
-              ] 
-          }).populate('orderId').populate('warehouse');
+        const localShipment = await Shipment.findOne({
+          $or: [
+            { primaryWaybill: waybill },
+            { waybillNumbers: waybill }
+          ]
+        }).populate('orderId').populate('warehouse');
 
-          if (localShipment) {
-              console.log(`[Shipment Service] Enriching label for waybill ${waybill} with local data`);
-              const shipmentObj = localShipment.toObject();
-              const warehouse = await this.getWarehouseByName(shipmentObj.pickupLocation || 'Main Warehouse');
-              
-              const warehouseObj = warehouse?.toObject ? warehouse.toObject() : warehouse;
-              const shipmentWarehouse = localShipment.warehouse?.toObject ? localShipment.warehouse.toObject() : localShipment.warehouse;
-              
-              const enrichment = {
-                  snm: warehouseObj?.name || shipmentWarehouse?.name || shipmentObj.warehouse?.name || 'Sender',
-                  sadd: warehouseObj?.address || shipmentWarehouse?.address || shipmentObj.warehouse?.address || 'Address Not Available',
-                  spin: warehouseObj?.pin || warehouseObj?.pincode || shipmentWarehouse?.pin || shipmentWarehouse?.pincode || shipmentObj.warehouse?.pin || shipmentObj.warehouse?.pincode || '000000',
-                  sph: warehouseObj?.phone || shipmentWarehouse?.phone || shipmentObj.warehouse?.phone || 'N/A',
-                  shipment: {
-                      ...shipmentObj,
-                      warehouse: warehouseObj || shipmentWarehouse || shipmentObj.warehouse
-                  }
-              };
+        if (localShipment) {
+          console.log(`[Shipment Service] Enriching label for waybill ${waybill} with local data`);
+          const shipmentObj = localShipment.toObject();
+          const warehouse = await this.getWarehouseByName(shipmentObj.pickupLocation || 'Main Warehouse');
 
-              if (Array.isArray(labelData)) {
-                  // Handle array of labels (standard Delhivery response)
-                  console.log(`[Shipment Service] Enriching label ARRAY of size ${labelData.length}`);
-                  enrichedData = labelData.map(label => ({ ...label, ...enrichment }));
-              } else if (typeof labelData === 'object' && labelData !== null) {
-                  // Handle single label object
-                  enrichedData = { ...labelData, ...enrichment };
-              } else if (typeof labelData === 'string' && labelData.trim().startsWith('{')) {
-                  // Handle JSON string
-                  const parsed = JSON.parse(labelData);
-                  if (Array.isArray(parsed)) {
-                      enrichedData = JSON.stringify(parsed.map(label => ({ ...label, ...enrichment })));
-                  } else {
-                      enrichedData = JSON.stringify({ ...parsed, ...enrichment });
-                  }
-              }
+          const warehouseObj = warehouse?.toObject ? warehouse.toObject() : warehouse;
+          const shipmentWarehouse = localShipment.warehouse?.toObject ? localShipment.warehouse.toObject() : localShipment.warehouse;
+
+          const enrichment = {
+            snm: warehouseObj?.name || shipmentWarehouse?.name || shipmentObj.warehouse?.name || 'Sender',
+            sadd: warehouseObj?.address || shipmentWarehouse?.address || shipmentObj.warehouse?.address || 'Address Not Available',
+            spin: warehouseObj?.pin || warehouseObj?.pincode || shipmentWarehouse?.pin || shipmentWarehouse?.pincode || shipmentObj.warehouse?.pin || shipmentObj.warehouse?.pincode || '000000',
+            sph: warehouseObj?.phone || shipmentWarehouse?.phone || shipmentObj.warehouse?.phone || 'N/A',
+            shipment: {
+              ...shipmentObj,
+              warehouse: warehouseObj || shipmentWarehouse || shipmentObj.warehouse
+            }
+          };
+
+          if (Array.isArray(labelData)) {
+            // Handle array of labels (standard Delhivery response)
+            console.log(`[Shipment Service] Enriching label ARRAY of size ${labelData.length}`);
+            enrichedData = labelData.map(label => ({ ...label, ...enrichment }));
+          } else if (typeof labelData === 'object' && labelData !== null) {
+            // Handle single label object
+            enrichedData = { ...labelData, ...enrichment };
+          } else if (typeof labelData === 'string' && labelData.trim().startsWith('{')) {
+            // Handle JSON string
+            const parsed = JSON.parse(labelData);
+            if (Array.isArray(parsed)) {
+              enrichedData = JSON.stringify(parsed.map(label => ({ ...label, ...enrichment })));
+            } else {
+              enrichedData = JSON.stringify({ ...parsed, ...enrichment });
+            }
           }
+        }
       } catch (enrichError) {
-          console.error('[Shipment Service] Label enrichment failed (non-critical):', enrichError);
+        console.error('[Shipment Service] Label enrichment failed (non-critical):', enrichError);
       }
 
       return {
@@ -754,7 +853,7 @@ export class ShipmentService {
   /**
    * Get all shipments with pagination and filtering
    */
-  async getShipments(options: {
+  async listShipments(options: {
     page?: number;
     limit?: number;
     status?: string;
@@ -765,7 +864,7 @@ export class ShipmentService {
     try {
       console.log('\n\n[Shipment Service] !!! getShipments CALLED !!!');
       console.log('[Shipment Service] Query Options:', options);
-      
+
       await connectToDatabase();
 
       const { page = 1, limit = 10, status, shipmentType, orderId, waybill } = options;
@@ -774,11 +873,11 @@ export class ShipmentService {
       // Build query
       const query: any = {}; // Remove isActive: true temporarily to see everything
       if (options.status || options.waybill || options.orderId) {
-          // If we have filters, apply them
+        // If we have filters, apply them
       } else {
-          // Default to everything
+        // Default to everything
       }
-      
+
       if (status) query.status = status;
       if (shipmentType) query.shipmentType = shipmentType;
       if (orderId) query.orderId = orderId;
@@ -788,9 +887,9 @@ export class ShipmentService {
           { waybillNumbers: { $regex: waybill, $options: 'i' } }
         ];
       }
-      
+
       console.log('[Shipment Service] Final MongoDB Query:', JSON.stringify(query));
-      
+
 
       const rawShipments = await Shipment.find(query)
         .populate('orderId', 'customerName total status paymentMethod shippingAddress orderItems products')
@@ -804,22 +903,22 @@ export class ShipmentService {
       let shipments = rawShipments.map(s => {
         const shipment = s.toObject();
         const order = shipment.orderId;
-        
+
         // If description is generic, try to construct from items
-        const isGeneric = !shipment.packageDetails?.productDescription || 
-                          shipment.packageDetails.productDescription === 'General Product' ||
-                          shipment.packageDetails.productDescription === 'General Items';
-                          
+        const isGeneric = !shipment.packageDetails?.productDescription ||
+          shipment.packageDetails.productDescription === 'General Product' ||
+          shipment.packageDetails.productDescription === 'General Items';
+
         if (isGeneric && order && (order.orderItems?.length > 0 || order.products?.length > 0)) {
           const items = (order.orderItems && order.orderItems.length > 0) ? order.orderItems : (order.products || []);
           const description = items.filter((i: any) => i && i.name).map((i: any) => i.name).join(', ').substring(0, 50);
-          
+
           if (!shipment.packageDetails) shipment.packageDetails = {};
           shipment.packageDetails.productDescription = description;
-          
+
           console.log(`[Shipment Service] FIXED description for ${shipment.primaryWaybill}: ${description}`);
         }
-        
+
         return shipment;
       });
 
@@ -835,11 +934,11 @@ export class ShipmentService {
           ]
         };
         const dispatchedOrders = await Order.find(virtualOrderQuery).lean() as any[];
-        
+
         for (const order of dispatchedOrders) {
           // Map items
           const items = (order.orderItems && order.orderItems.length > 0) ? order.orderItems : (order.products || []);
-          
+
           // Collect all waybills from this order
           const shipmentDetails = order.shipmentDetails || order.reverseShipment || order.replacementShipment || {};
           const waybillsInOrder = Array.from(new Set([
@@ -854,8 +953,8 @@ export class ShipmentService {
 
           for (const waybill of waybillsInOrder) {
             // Check if this specific waybill was already loaded from a real Shipment document
-            const isAlreadyLoaded = shipments.some(s => 
-              s.primaryWaybill === waybill || 
+            const isAlreadyLoaded = shipments.some(s =>
+              s.primaryWaybill === waybill ||
               (s.waybillNumbers && s.waybillNumbers.includes(waybill))
             );
 
@@ -907,31 +1006,31 @@ export class ShipmentService {
       // Update descriptions to include Item IDs where possible
       // AND enrich missing warehouse details
       shipments = await Promise.all(shipments.map(async (s) => {
-          // 1. Item ID Enrichment
-          if (s.orderId && s.orderId.orderItems) {
-              const matchedItem = s.orderId.orderItems.find((i: any) => i.waybillNumber === s.primaryWaybill);
-              if (matchedItem) {
-                  const itemIdShort = matchedItem._id?.toString().slice(-4);
-                  s.packageDetails.productDescription = `${matchedItem.name} (#${itemIdShort})`;
-              }
+        // 1. Item ID Enrichment
+        if (s.orderId && s.orderId.orderItems) {
+          const matchedItem = s.orderId.orderItems.find((i: any) => i.waybillNumber === s.primaryWaybill);
+          if (matchedItem) {
+            const itemIdShort = matchedItem._id?.toString().slice(-4);
+            s.packageDetails.productDescription = `${matchedItem.name} (#${itemIdShort})`;
           }
+        }
 
-          // 2. Warehouse Enrichment (Fix for PIN: -- and empty address)
-          if (!s.warehouse || !s.warehouse.address || s.warehouse.address === '--' || s.warehouse.address === 'No address' || s.warehouse.pincode === '--' || s.warehouse.pincode === '000000' || s.warehouse.pin === '--') {
-              const realWarehouse = await this.getWarehouseByName(s.pickupLocation || s.warehouse?.name || 'Main Warehouse');
-              if (realWarehouse) {
-                  s.warehouse = {
-                      name: realWarehouse.name,
-                      address: realWarehouse.address || realWarehouse.warehouse_address || s.warehouse?.address,
-                      pincode: realWarehouse.pincode || realWarehouse.pin || realWarehouse.warehouse_pin || s.warehouse?.pincode || s.warehouse?.pin,
-                      phone: realWarehouse.phone || realWarehouse.warehouse_phone || s.warehouse?.phone
-                  };
-                  // Compatibility field
-                  (s.warehouse as any).pin = s.warehouse.pincode;
-                  console.log(`[Shipment Service] Enriched warehouse for ${s.primaryWaybill}: ${s.warehouse.pincode}`);
-              }
+        // 2. Warehouse Enrichment (Fix for PIN: -- and empty address)
+        if (!s.warehouse || !s.warehouse.address || s.warehouse.address === '--' || s.warehouse.address === 'No address' || s.warehouse.pincode === '--' || s.warehouse.pincode === '000000' || s.warehouse.pin === '--') {
+          const realWarehouse = await this.getWarehouseByName(s.pickupLocation || s.warehouse?.name || 'Main Warehouse');
+          if (realWarehouse) {
+            s.warehouse = {
+              name: realWarehouse.name,
+              address: realWarehouse.address || realWarehouse.warehouse_address || s.warehouse?.address,
+              pincode: realWarehouse.pincode || realWarehouse.pin || realWarehouse.warehouse_pin || s.warehouse?.pincode || s.warehouse?.pin,
+              phone: realWarehouse.phone || realWarehouse.warehouse_phone || s.warehouse?.phone
+            };
+            // Compatibility field
+            (s.warehouse as any).pin = s.warehouse.pincode;
+            console.log(`[Shipment Service] Enriched warehouse for ${s.primaryWaybill}: ${s.warehouse.pincode}`);
           }
-          return s;
+        }
+        return s;
       }));
 
       // Sort combined array
@@ -962,6 +1061,20 @@ export class ShipmentService {
   }
 
   /**
+   * Get all shipments for a specific order
+   */
+  async getShipmentsByOrderId(orderId: string) {
+    return this.listShipments({ orderId, limit: 100 });
+  }
+
+  /**
+   * Alias for listShipments for backward compatibility
+   */
+  async getShipments(options: any) {
+    return this.listShipments(options);
+  }
+
+  /**
    * Get shipment by ID
    */
   async getShipmentById(shipmentId: string) {
@@ -977,16 +1090,16 @@ export class ShipmentService {
 
       const shipment = s.toObject();
       const order = shipment.orderId;
-      
+
       if (order && (order.orderItems?.length > 0 || order.products?.length > 0)) {
-        const isGeneric = !shipment.packageDetails?.productDescription || 
-                          shipment.packageDetails.productDescription === 'General Product' ||
-                          shipment.packageDetails.productDescription === 'General Items';
-                          
+        const isGeneric = !shipment.packageDetails?.productDescription ||
+          shipment.packageDetails.productDescription === 'General Product' ||
+          shipment.packageDetails.productDescription === 'General Items';
+
         if (isGeneric) {
           const items = order.orderItems?.length > 0 ? order.orderItems : (order.products || []);
           const description = items.map((i: any) => i.name).join(', ').substring(0, 50);
-          
+
           if (!shipment.packageDetails) shipment.packageDetails = {};
           shipment.packageDetails.productDescription = description;
         }
@@ -1025,16 +1138,16 @@ export class ShipmentService {
 
       const shipment = s.toObject();
       const order = shipment.orderId;
-      
+
       if (order && (order.orderItems?.length > 0 || order.products?.length > 0)) {
-        const isGeneric = !shipment.packageDetails?.productDescription || 
-                          shipment.packageDetails.productDescription === 'General Product' ||
-                          shipment.packageDetails.productDescription === 'General Items';
-                          
+        const isGeneric = !shipment.packageDetails?.productDescription ||
+          shipment.packageDetails.productDescription === 'General Product' ||
+          shipment.packageDetails.productDescription === 'General Items';
+
         if (isGeneric) {
           const items = order.orderItems?.length > 0 ? order.orderItems : (order.products || []);
           const description = items.map((i: any) => i.name).join(', ').substring(0, 50);
-          
+
           if (!shipment.packageDetails) shipment.packageDetails = {};
           shipment.packageDetails.productDescription = description;
         }
@@ -1105,6 +1218,7 @@ export class ShipmentService {
     phone?: string[];
     pt?: 'COD' | 'Pre-paid';
     cod?: number;
+    totalAmount?: number;
     add?: string;
     products_desc?: string;
     weight?: number;
@@ -1132,6 +1246,8 @@ export class ShipmentService {
 
       // Check shipment status for edit eligibility
       const allowedEditStatuses = [
+        'CREATED',
+        'Created',
         'PENDING',
         'PICKUP_PENDING',
         'PICKUP_SCHEDULED',
@@ -1165,8 +1281,9 @@ export class ShipmentService {
         // Convert our payment mode format to Delhivery format
         editPayload.payment_mode = updateData.pt === 'Pre-paid' ? 'Prepaid' : 'COD';
       }
-      if (updateData.cod !== undefined) {
-        editPayload.cod_amount = updateData.cod.toString();
+      if (updateData.cod !== undefined || updateData.totalAmount !== undefined) {
+        const amount = updateData.totalAmount !== undefined ? updateData.totalAmount : updateData.cod;
+        editPayload.cod_amount = amount?.toString();
       }
       if (updateData.weight !== undefined) {
         editPayload.weight = updateData.weight.toString();
@@ -1449,7 +1566,7 @@ export class ShipmentService {
     try {
       // Clean name: remove common suffixes like " - Delhivery"
       const cleanName = name.split(' - ')[0].trim();
-      
+
       // **PRIORITIZE MONGODB FIRST** - Search in MongoDB database as primary source
       try {
         console.log(`[Shipment Service] Searching for warehouse '${cleanName}' (original: '${name}') in MongoDB...`);
@@ -1464,16 +1581,16 @@ export class ShipmentService {
           console.log(`[Shipment Service] Found warehouse '${cleanName}' in MongoDB`);
           return warehouse;
         }
-        
+
         // Try fuzzy match if exact search fails
         const fuzzyWarehouse = await Warehouse.findOne({
-           name: { $regex: new RegExp(cleanName, 'i') },
-           status: 'active'
+          name: { $regex: new RegExp(cleanName, 'i') },
+          status: 'active'
         });
-        
+
         if (fuzzyWarehouse) {
-           console.log(`[Shipment Service] Found fuzzy match for '${cleanName}' in MongoDB: ${fuzzyWarehouse.name}`);
-           return fuzzyWarehouse;
+          console.log(`[Shipment Service] Found fuzzy match for '${cleanName}' in MongoDB: ${fuzzyWarehouse.name}`);
+          return fuzzyWarehouse;
         } else {
           console.log(`[Shipment Service] Warehouse '${name}' not found in MongoDB`);
         }
@@ -1687,7 +1804,8 @@ export class ShipmentService {
     warehouse: any,
     packageIndex?: number,
     shipmentSubtotal?: number,
-    selectedItems?: any[]
+    selectedItems?: any[],
+    shipmentNumber: number = 1
   ): DelhiveryShipmentData {
     const shippingAddress = order.shippingAddress || order.deliveryAddress || {};
     const packageDetails = request.packages?.[packageIndex || 0];
@@ -1742,26 +1860,19 @@ export class ShipmentService {
     // Handle Partial / Split Shipments: Generate unique order reference
     const hasExistingShipment = order.shipmentCreated || (order.shipmentDetails?.waybillNumbers?.length || 0) > 0;
     const isPartialSelection = (request.selectedItemIds && request.selectedItemIds.length > 0) || (selectedItems && selectedItems.length > 0);
-    
+
     // Create unique order reference for Delhivery (avoiding "Duplicate Order" error)
-    let finalOrderRef = order._id.toString();
-    if (hasExistingShipment || isPartialSelection) {
-      // Append a deterministic suffix for the box number or timestamp
-      const suffix = hasExistingShipment ? `_${Date.now().toString().slice(-4)}` : '';
-      finalOrderRef = `${finalOrderRef}${suffix}`;
-    }
+    // Use sequential numbering (S1, S2, etc.) for multiple shipments on same order
+    const suffix = `_S${shipmentNumber}`;
+    const finalOrderRef = `${order._id.toString()}${suffix}`;
 
     // Use pre-calculated selected items or filter now
-    const itemsToShip = selectedItems || (isPartialSelection 
+    const itemsToShip = selectedItems || (isPartialSelection
       ? (order.orderItems || order.products || []).filter((item: any) => request.selectedItemIds?.includes(item._id.toString()))
       : (order.orderItems || order.products || []));
 
-    // Use pre-calculated subtotal or calculate now
-    const finalSubtotal = shipmentSubtotal ?? itemsToShip.reduce((sum: number, item: any) => {
-      const price = typeof item.price === 'number' ? item.price : parseFloat(item.price) || 0;
-      const quantity = typeof item.qty === 'number' ? item.qty : (typeof item.quantity === 'number' ? item.quantity : 1);
-      return sum + (price * quantity);
-    }, 0);
+    // Simplify price calculation: use shipmentSubtotal as the definitive amount
+    const finalSubtotal = shipmentSubtotal || 0;
 
     return {
       // Required fields
@@ -1788,7 +1899,7 @@ export class ShipmentService {
       return_country: warehouse.country || 'India',
 
       // Product details
-      products_desc: itemsToShip.map((item: any) => item.name).join(', ') || 'E-commerce Product',
+      products_desc: request.productDescription || itemsToShip.map((item: any) => item.name).join(', ') || 'E-commerce Product',
       hsn_code: hsnCode,
       cod_amount: paymentMode === 'COD' ? Math.round(finalSubtotal).toString() : '0',
       order_date: new Date().toISOString().split('T')[0], // Current date in YYYY-MM-DD format
@@ -1860,9 +1971,9 @@ export class ShipmentService {
   }
 
   private async updateOrderWithShipment(
-    order: any, 
-    shipmentType: string, 
-    shipmentDetails: ShipmentDetails, 
+    order: any,
+    shipmentType: string,
+    shipmentDetails: ShipmentDetails,
     selectedItemIds?: string[]
   ): Promise<void> {
     try {
@@ -1874,42 +1985,50 @@ export class ShipmentService {
         case 'FORWARD':
         case 'MPS':
           updateData.shipmentCreated = true;
-          
-          // Use $push to add to shipment details history if it exists, otherwise set it
-          // This allows tracking multiple shipments (splits) for one order
+
+          // Ensure shipmentDetails exists as an object before pushing to history
+          // We use $push for history, but also set top-level fields for compatibility
           updateData.$push = { 'shipmentDetails.history': shipmentDetails };
-          
+          updateData['shipmentDetails.lastWaybill'] = primaryWaybill;
+          updateData['shipmentDetails.shippingMode'] = shipmentDetails.shippingMode;
+          updateData['shipmentDetails.pickupLocation'] = shipmentDetails.pickupLocation;
+
           // Determine items to update
           const hasSpecificSelection = selectedItemIds && selectedItemIds.length > 0;
           const allItems = order.orderItems || order.products || [];
-          
+
           const updatedItems = allItems.map((item: any) => {
-            // If this item was selected for this shipment, update its waybill and status
+            // Find if this specific item ID was part of the selection
             const isSelected = !hasSpecificSelection || selectedItemIds.includes(item._id.toString());
-            
+
             if (isSelected) {
-              return {
-                ...item,
-                status: 'Dispatched',
-                waybillNumber: primaryWaybill,
-                trackingId: primaryWaybill
-              };
+              // Only update if not already shipped
+              if (item.status !== 'Dispatched' && item.status !== 'Delivered') {
+                return {
+                  ...item,
+                  status: 'Dispatched',
+                  waybillNumber: primaryWaybill,
+                  trackingId: primaryWaybill
+                };
+              }
             }
             return item;
           });
 
+          // Sync both arrays
           updateData.orderItems = updatedItems;
           updateData.products = updatedItems;
 
-          // Check if ALL items are now shipped to set top-level status
-          const allItemsShipped = updatedItems.every((item: any) => 
-            item.status === 'Dispatched' || item.status === 'Delivered'
+          // Check completion status for the whole order
+          const allItemsShipped = updatedItems.every((item: any) =>
+            item.status === 'Dispatched' || item.status === 'Delivered' || item.status === 'Cancelled'
           );
 
           if (allItemsShipped) {
             updateData.status = 'Dispatched';
           } else {
-            // Keep current status (e.g., 'Processing') if some items are still pending
+            // If some items are shipped but not all, set to 'Processing' or keep current
+            // Using 'Processing' ensures it's not 'pending' or 'Confirmed' anymore
             updateData.status = 'Processing';
           }
           break;

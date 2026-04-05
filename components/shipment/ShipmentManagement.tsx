@@ -85,6 +85,7 @@ interface EditFormData {
   shipment_length?: number;
   pt?: 'COD' | 'Pre-paid';
   cod?: number;
+  totalAmount?: number;
 }
 
 export default function ShipmentManagement() {
@@ -266,18 +267,15 @@ export default function ShipmentManagement() {
   const handleLabelSuccess = (message: string) => {
     setSuccess(message);
     setShowLabelGenerator(false);
-    // Clear success message after 3 seconds
     setTimeout(() => setSuccess(null), 3000);
   };
 
   const handleLabelError = (message: string) => {
     setError(message);
     setShowLabelGenerator(false);
-    // Clear error message after 5 seconds
     setTimeout(() => setError(null), 5000);
   };
 
-  // Delhivery Pickup Request Creation
   const handleCreatePickupRequest = async () => {
     try {
       setEditLoading(true);
@@ -307,38 +305,17 @@ export default function ShipmentManagement() {
       }
     } catch (err: any) {
       console.error('Error creating pickup request:', err);
-      let errorMessage = err.message || 'Failed to create pickup request';
-      
-      // Special handling for wallet balance errors
-      if (errorMessage.toLowerCase().includes('wallet balance') || errorMessage.toLowerCase().includes('prepaid')) {
-        try {
-          // Attempt to parse the error if it contains JSON
-          const jsonPart = errorMessage.includes('{') ? errorMessage.substring(errorMessage.indexOf('{')) : '';
-          const jsonError = jsonPart ? JSON.parse(jsonPart) : {};
-          
-          if (jsonError.prepaid) {
-            errorMessage = `Insufficient Delhivery Wallet Balance: ${jsonError.prepaid}. Please recharge your Delhivery account to at least ₹500.`;
-          } else {
-            errorMessage = 'Insufficient Delhivery Wallet Balance. Please recharge your account to at least ₹500.';
-          }
-        } catch (e) {
-          errorMessage = 'Insufficient Delhivery Wallet Balance. Please recharge your Delhivery account.';
-        }
-      }
-      
-      setError(errorMessage);
+      setError(err.message || 'Failed to create pickup request');
     } finally {
       setEditLoading(false);
     }
   };
 
-  // Delhivery Shipment Tracking
   const handleTrackShipment = async () => {
     try {
       setEditLoading(true);
       setError(null);
 
-      // Test mode with dummy data
       if (testMode) {
         const dummyTrackingData = {
           Status: {
@@ -377,7 +354,6 @@ export default function ShipmentManagement() {
           : 'Tracking information retrieved successfully';
         setSuccess(successMessage);
       } else {
-        // Provide more specific error messages
         if (result.error?.includes('Authentication failed')) {
           throw new Error('Delhivery API authentication failed. Please check the API token in environment variables.');
         } else if (result.error?.includes('Waybill not found')) {
@@ -394,7 +370,6 @@ export default function ShipmentManagement() {
     }
   };
 
-  // Delhivery Document Download
   const handleDownloadDocument = async () => {
     try {
       setEditLoading(true);
@@ -404,19 +379,15 @@ export default function ShipmentManagement() {
       
       if (response.ok) {
         const contentType = response.headers.get('content-type');
-        
-        // Check if response is JSON (mock data) or binary (actual document)
         if (contentType && contentType.includes('application/json')) {
           const result = await response.json();
           if (result.isMockData) {
-            // Handle mock data - show a message or open mock URL
             setSuccess(`${documentType} document URL retrieved (Mock Data - API authentication failed): ${result.data.document_url}`);
             setShowDocumentDialog(false);
             return;
           }
         }
         
-        // Handle actual binary document
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -431,9 +402,7 @@ export default function ShipmentManagement() {
         setShowDocumentDialog(false);
       } else {
         const result = await response.json();
-        
         if (response.status === 404 && result.suggestions) {
-          // Show helpful suggestions for document not found
           const suggestionText = result.suggestions.join('\n• ');
           setError(`${result.error}.\n\nSuggestions:\n• ${suggestionText}`);
         } else {
@@ -494,10 +463,13 @@ export default function ShipmentManagement() {
       shipment_width: shipment.packageDetails.dimensions.width,
       shipment_length: shipment.packageDetails.dimensions.length,
       pt: shipment.packageDetails.paymentMode as 'COD' | 'Pre-paid',
-      cod: shipment.packageDetails.codAmount
+      cod: shipment.packageDetails.codAmount,
+      totalAmount: shipment.packageDetails.codAmount
     });
     setShowEditDialog(true);
   };
+
+  const handleDownloadDocumentDirect = handleDownloadDocument; // Alias for consistency
 
   return (
     <div className="space-y-6">
@@ -823,7 +795,7 @@ export default function ShipmentManagement() {
                 onChange={(e) => setEditFormData({ ...editFormData, products_desc: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="weight">Weight (g)</Label>
                 <Input
@@ -834,19 +806,28 @@ export default function ShipmentManagement() {
                 />
               </div>
               <div>
-                <Label htmlFor="payment">Payment Mode</Label>
-                <Select
-                  value={editFormData.pt || ''}
-                  onValueChange={(value) => setEditFormData({ ...editFormData, pt: value as 'COD' | 'Pre-paid' })}
+                <Label htmlFor="edit_pt">Payment Mode</Label>
+                <Select 
+                  value={editFormData.pt} 
+                  onValueChange={(val: any) => setEditFormData({ ...editFormData, pt: val })}
                 >
-                  <SelectTrigger>
-                    <SelectValue />
+                  <SelectTrigger id="edit_pt">
+                    <SelectValue placeholder="Select payment mode" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="COD">COD</SelectItem>
                     <SelectItem value="Pre-paid">Pre-paid</SelectItem>
+                    <SelectItem value="COD">Cash on Delivery (COD)</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div>
+                <Label htmlFor="edit_totalAmount">Total Amount (Price)</Label>
+                <Input
+                  id="edit_totalAmount"
+                  type="number"
+                  value={editFormData.totalAmount || ''}
+                  onChange={(e) => setEditFormData({ ...editFormData, totalAmount: parseFloat(e.target.value) })}
+                />
               </div>
             </div>
             {editFormData.pt === 'COD' && (
@@ -911,7 +892,7 @@ export default function ShipmentManagement() {
         </DialogContent>
       </Dialog>
 
-      {/* Enhanced Shipping Label Generator */}
+      {/* Shipping Label Generator */}
       <ShippingLabelGenerator
         isOpen={showLabelGenerator}
         onClose={() => setShowLabelGenerator(false)}

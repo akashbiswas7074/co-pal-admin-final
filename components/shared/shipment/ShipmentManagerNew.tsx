@@ -91,6 +91,7 @@ interface CreateRequest {
     ewb: string;
   };
   selectedItemIds: string[];
+  totalAmount?: number;
 }
 
 interface Props {
@@ -142,6 +143,7 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
     packages: [],
     customFields: { fragile_shipment: false, dangerous_good: false, plastic_packaging: false, hsn_code: '', ewb: '' },
     selectedItemIds: [],
+    totalAmount: 0,
   });
 
   // ─── Fetch ────────────────────────────────────────────────────────────────
@@ -175,6 +177,7 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
           selectedItemIds: initialSelection,
           weight,
           dimensions,
+          totalAmount: data.totalAmount || prev.totalAmount,
         }));
 
         // Auto-open create form when a specific item is pre-selected (direct from product row button)
@@ -409,7 +412,7 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
       </div>
 
       {/* ── Order Items Status Table ── */}
-      {shipmentData.orderItems.length > 0 && (
+      {shipmentData?.orderItems && shipmentData.orderItems.length > 0 && (
         <div className="border border-gray-200 rounded-lg overflow-hidden">
           <div className="bg-gray-50 border-b border-gray-200 px-4 py-2.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -424,7 +427,7 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
               <div className="w-24 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-green-500 rounded-full transition-all"
-                  style={{ width: `${shipmentData.orderItems.length > 0 ? (shippedItems.length / shipmentData.orderItems.length) * 100 : 0}%` }}
+                  style={{ width: `${shipmentData?.orderItems && shipmentData.orderItems.length > 0 ? (shippedItems.length / shipmentData.orderItems.length) * 100 : 0}%` }}
                 />
               </div>
               <span className="text-xs text-gray-500">
@@ -434,7 +437,7 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
           </div>
 
           <div className="divide-y divide-gray-100">
-            {shipmentData.orderItems.map(item => {
+            {shipmentData?.orderItems && shipmentData.orderItems.map(item => {
               const isShipped = item.status === 'Dispatched' || item.status === 'Delivered' || !!item.waybillNumber;
               return (
                 <div key={item._id} className={`flex items-center gap-3 px-4 py-3 ${isShipped ? 'bg-green-50/40' : 'bg-white'}`}>
@@ -447,15 +450,15 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
                   </div>
 
                   {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
-                    <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
-                      <span>Qty: {item.qty}</span>
-                      {item.size  && <><span>·</span><span>Size: {item.size}</span></>}
-                      {item.color && <><span>·</span><span>Color: {item.color}</span></>}
-                      <span>·</span>
-                      <span>₹{item.price.toFixed(2)}</span>
-                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{String(item.name || 'Unknown Item')}</p>
+                      <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+                        <span>Qty: {item.qty}</span>
+                        {item.size && typeof item.size === 'string' && <><span>·</span><span>Size: {item.size}</span></>}
+                        {item.color && typeof item.color === 'string' && <><span>·</span><span>Color: {item.color}</span></>}
+                        <span>·</span>
+                        <span>₹{Number(item.price || 0).toFixed(2)}</span>
+                      </div>
                     {/* Weight & dims hint */}
                     <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
                       <Weight className="h-3 w-3" />
@@ -489,7 +492,7 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
       )}
 
       {/* ── Available Actions ── */}
-      {shipmentData.availableActions.length > 0 && !showCreateForm && (
+      {shipmentData && shipmentData.availableActions && shipmentData.availableActions.length > 0 && !showCreateForm && (
         <div className="border border-gray-200 rounded-lg p-4 bg-white">
           <p className="text-sm font-semibold text-gray-700 mb-3">Create New Shipment</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -508,7 +511,7 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
                 {action === 'REVERSE'     && <RotateCcw className="h-5 w-5" />}
                 {action === 'REPLACEMENT' && <Replace  className="h-5 w-5" />}
                 {action === 'MPS'         && <Package  className="h-5 w-5" />}
-                <span>{action === 'MPS' ? 'Multi-Package' : action}</span>
+                <span>{action === 'MPS' ? 'Multi-Package' : String(action)}</span>
                 <span className="text-xs font-normal opacity-70">
                   {action === 'FORWARD'     && 'Standard shipping'}
                   {action === 'REVERSE'     && 'Return pickup'}
@@ -565,7 +568,7 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
                 >
                   <option value="">— Select warehouse —</option>
                   {shipmentData.warehouses.map(w => (
-                    <option key={w.name} value={w.name}>{w.name} · {w.location}</option>
+                    <option key={w.name} value={w.name}>{String(w.name)}</option>
                   ))}
                 </select>
               </div>
@@ -730,6 +733,22 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
                       className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
+                </div>
+
+                {/* Manual Price Override */}
+                <div className="pt-2">
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide flex items-center gap-1">
+                    💰 Total Amount (Price)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={createData.totalAmount}
+                    onChange={e => setCreateData(p => ({ ...p, totalAmount: parseFloat(e.target.value) || 0 }))}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-[10px] text-gray-500 italic mt-1">Manual price override for this shipment</p>
                 </div>
               </div>
             )}
@@ -897,7 +916,7 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Pickup Location</p>
-                  <p className="text-sm text-gray-700">{shipmentData.shipmentDetails.pickupLocation}</p>
+                  <p className="text-sm text-gray-700">{String(shipmentData.shipmentDetails.pickupLocation || 'N/A')}</p>
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Shipping Mode</p>
