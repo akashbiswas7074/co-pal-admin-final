@@ -1969,7 +1969,6 @@ export class ShipmentService {
       delhiveryResponse
     };
   }
-
   private async updateOrderWithShipment(
     order: any,
     shipmentType: string,
@@ -1977,21 +1976,21 @@ export class ShipmentService {
     selectedItemIds?: string[]
   ): Promise<void> {
     try {
-      const updateData: any = {};
+      const updateData: any = {
+        $set: {}
+      };
       const waybillNumbers = shipmentDetails.waybillNumbers || [];
       const primaryWaybill = waybillNumbers[0];
 
       switch (shipmentType) {
         case 'FORWARD':
         case 'MPS':
-          updateData.shipmentCreated = true;
-
-          // Ensure shipmentDetails exists as an object before pushing to history
-          // We use $push for history, but also set top-level fields for compatibility
+          updateData.$set.shipmentCreated = true;
+          updateData.$set['shipmentDetails.lastWaybill'] = primaryWaybill;
+          updateData.$set['shipmentDetails.shippingMode'] = shipmentDetails.shippingMode;
+          updateData.$set['shipmentDetails.pickupLocation'] = shipmentDetails.pickupLocation;
+          
           updateData.$push = { 'shipmentDetails.history': shipmentDetails };
-          updateData['shipmentDetails.lastWaybill'] = primaryWaybill;
-          updateData['shipmentDetails.shippingMode'] = shipmentDetails.shippingMode;
-          updateData['shipmentDetails.pickupLocation'] = shipmentDetails.pickupLocation;
 
           // Determine items to update
           const hasSpecificSelection = selectedItemIds && selectedItemIds.length > 0;
@@ -2016,8 +2015,8 @@ export class ShipmentService {
           });
 
           // Sync both arrays
-          updateData.orderItems = updatedItems;
-          updateData.products = updatedItems;
+          updateData.$set.orderItems = updatedItems;
+          updateData.$set.products = updatedItems;
 
           // Check completion status for the whole order
           const allItemsShipped = updatedItems.every((item: any) =>
@@ -2025,22 +2024,21 @@ export class ShipmentService {
           );
 
           if (allItemsShipped) {
-            updateData.status = 'Dispatched';
+            updateData.$set.status = 'Dispatched';
           } else {
             // If some items are shipped but not all, set to 'Processing' or keep current
-            // Using 'Processing' ensures it's not 'pending' or 'Confirmed' anymore
-            updateData.status = 'Processing';
+            updateData.$set.status = 'Processing';
           }
           break;
 
         case 'REVERSE':
-          updateData.reverseShipment = shipmentDetails;
-          updateData.status = 'Return Initiated';
+          updateData.$set.reverseShipment = shipmentDetails;
+          updateData.$set.status = 'Return Initiated';
           break;
 
         case 'REPLACEMENT':
-          updateData.replacementShipment = shipmentDetails;
-          updateData.status = 'Replacement Initiated';
+          updateData.$set.replacementShipment = shipmentDetails;
+          updateData.$set.status = 'Replacement Initiated';
           break;
       }
 

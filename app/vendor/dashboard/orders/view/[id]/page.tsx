@@ -340,8 +340,8 @@ const AdminOrderViewPage = () => {
                     </Group>
                   </Table.Td>
                   <Table.Td>
-                    {item.size && <Text size="xs">Size: {item.size}</Text>}
-                    {item.color && <Text size="xs">Color: {item.color}</Text>}
+                    {item.size && <Text size="xs">Size: {typeof item.size === 'string' ? item.size : (item.size && typeof item.size === 'object' && (item.size as any).size) ? (item.size as any).size : String(item.size)}</Text>}
+                    {item.color && <Text size="xs">Color: {typeof item.color === 'string' ? item.color : (item.color && typeof item.color === 'object' && (item.color as any).color) ? (item.color as any).color : String(item.color)}</Text>}
                     {/* You might want to display SKU from item.product.sku if available */}
                   </Table.Td>
                   <Table.Td>₹{item.price?.toFixed(2) || (item.product?.price?.toFixed(2) || "N/A")}</Table.Td>

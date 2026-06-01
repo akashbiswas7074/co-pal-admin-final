@@ -4,6 +4,8 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IStatsTickerItem {
     emoji: string;
     label: string;
+    iconColor?: string;
+    textColor?: string;
 }
 
 export interface IStatsTicker extends Document {
@@ -20,6 +22,8 @@ export interface IStatsTicker extends Document {
 const StatsTickerItemSchema = new Schema<IStatsTickerItem>({
     emoji: { type: String, required: false },
     label: { type: String, required: true },
+    iconColor: { type: String, required: false },
+    textColor: { type: String, required: false },
 });
 
 const StatsTickerSchema = new Schema<IStatsTicker>(

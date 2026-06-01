@@ -31,24 +31,16 @@ export function calculateVolumetricWeight(
     return (length * breadth * height) / 5000;
 }
 
-/**
- * Get the chargeable weight (max of actual weight and volumetric weight)
- * Delivery partners charge based on whichever is greater
- * 
- * @param actualWeight - Actual/dead weight in kg
- * @param volumetricWeight - Volumetric weight in kg
- * @returns Chargeable weight in kg
- */
 export function getChargeableWeight(
     actualWeight: number,
     volumetricWeight: number
 ): number {
-    return Math.max(actualWeight, volumetricWeight);
+    // Only take actual physical weight
+    return actualWeight;
 }
 
 /**
- * Calculate chargeable weight from shipping dimensions
- * Combines volumetric weight calculation and chargeable weight determination
+ * Calculate chargeable weight from shipping dimensions (only dead weight is used)
  * 
  * @param dimensions - Shipping dimensions object
  * @returns Chargeable weight in kg
@@ -56,12 +48,7 @@ export function getChargeableWeight(
 export function calculateChargeableWeight(
     dimensions: ShippingDimensions
 ): number {
-    const volumetricWeight = calculateVolumetricWeight(
-        dimensions.length,
-        dimensions.breadth,
-        dimensions.height
-    );
-    return getChargeableWeight(dimensions.weight, volumetricWeight);
+    return dimensions.weight;
 }
 
 /**
@@ -76,7 +63,7 @@ export function getShippingInfo(dimensions: ShippingDimensions) {
         dimensions.breadth,
         dimensions.height
     );
-    const chargeableWeight = getChargeableWeight(dimensions.weight, volumetricWeight);
+    const chargeableWeight = dimensions.weight;
 
     return {
         actualWeight: dimensions.weight,

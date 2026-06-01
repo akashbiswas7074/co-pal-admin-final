@@ -439,6 +439,8 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
           <div className="divide-y divide-gray-100">
             {shipmentData?.orderItems && shipmentData.orderItems.map(item => {
               const isShipped = item.status === 'Dispatched' || item.status === 'Delivered' || !!item.waybillNumber;
+              const sizeVal = typeof item.size === 'string' ? item.size : (item.size && typeof item.size === 'object' && (item.size as any).size) ? (item.size as any).size : null;
+              const colorVal = typeof item.color === 'string' ? item.color : (item.color && typeof item.color === 'object' && (item.color as any).color) ? (item.color as any).color : null;
               return (
                 <div key={item._id} className={`flex items-center gap-3 px-4 py-3 ${isShipped ? 'bg-green-50/40' : 'bg-white'}`}>
                   {/* Image */}
@@ -454,8 +456,8 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
                       <p className="text-sm font-medium text-gray-900 truncate">{String(item.name || 'Unknown Item')}</p>
                       <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
                         <span>Qty: {item.qty}</span>
-                        {item.size && typeof item.size === 'string' && <><span>·</span><span>Size: {item.size}</span></>}
-                        {item.color && typeof item.color === 'string' && <><span>·</span><span>Color: {item.color}</span></>}
+                        {sizeVal && <><span>·</span><span>Size: {sizeVal}</span></>}
+                        {colorVal && <><span>·</span><span>Color: {colorVal}</span></>}
                         <span>·</span>
                         <span>₹{Number(item.price || 0).toFixed(2)}</span>
                       </div>
@@ -609,6 +611,8 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
                   {shipmentData.orderItems.map(item => {
                     const isShipped   = item.status === 'Dispatched' || item.status === 'Delivered' || !!item.waybillNumber;
                     const isSelected  = createData.selectedItemIds.includes(item._id);
+                    const sizeVal = typeof item.size === 'string' ? item.size : (item.size && typeof item.size === 'object' && (item.size as any).size) ? (item.size as any).size : null;
+                    const colorVal = typeof item.color === 'string' ? item.color : (item.color && typeof item.color === 'object' && (item.color as any).color) ? (item.color as any).color : null;
 
                     return (
                       <div
@@ -641,8 +645,8 @@ export function ShipmentManager({ orderId, preSelectedItemId, onShipmentCreated,
                           <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500 mt-0.5">
                             <span>Qty: {item.qty}</span>
-                            {item.size  && <span>· Size: {item.size}</span>}
-                            {item.color && <span>· {item.color}</span>}
+                            {sizeVal  && <span>· Size: {sizeVal}</span>}
+                            {colorVal && <span>· {colorVal}</span>}
                             <span>· ₹{item.price.toFixed(2)}</span>
                             <span className="flex items-center gap-0.5">
                               <Weight className="h-3 w-3" />{item.weightTotal}g

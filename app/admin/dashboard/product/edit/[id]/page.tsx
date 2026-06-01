@@ -1542,7 +1542,7 @@ const EditProductPage = () => {
                     <div className="border-t pt-4">
                       <Label className="text-base font-medium">📦 Shipping Dimensions</Label>
                       <p className="text-sm text-muted-foreground mt-1">
-                        Package dimensions for delivery charge calculation. Volumetric weight = (L × W × H) / 5000
+                        Package weight and dimensions. Only dead/actual weight is used for delivery charge calculations.
                       </p>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1631,13 +1631,10 @@ const EditProductPage = () => {
                         )}
                       </div>
                     </div>
-                    {formValues.shippingDimensions.length && formValues.shippingDimensions.breadth && formValues.shippingDimensions.height && (
+                    {formValues.shippingDimensions.weight && (
                       <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                         <p className="text-sm">
-                          <strong>Volumetric Weight:</strong> {((parseFloat(formValues.shippingDimensions.length) * parseFloat(formValues.shippingDimensions.breadth) * parseFloat(formValues.shippingDimensions.height)) / 5000).toFixed(2)} kg
-                          {formValues.shippingDimensions.weight && (
-                            <> | <strong>Chargeable Weight:</strong> {Math.max(parseFloat(formValues.shippingDimensions.weight), (parseFloat(formValues.shippingDimensions.length) * parseFloat(formValues.shippingDimensions.breadth) * parseFloat(formValues.shippingDimensions.height)) / 5000).toFixed(2)} kg</>
-                          )}
+                          <strong>Chargeable Weight:</strong> {parseFloat(formValues.shippingDimensions.weight).toFixed(2)} kg
                         </p>
                       </div>
                     )}

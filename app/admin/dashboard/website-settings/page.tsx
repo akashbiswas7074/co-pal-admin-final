@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, Upload, Trash2, Eye, Settings, Globe, Search, BarChart, FileText, Fingerprint, Truck, Pencil, AlertCircle } from "lucide-react";
+import { Loader2, Save, Upload, Trash2, Eye, Settings, Globe, Search, BarChart, FileText, Fingerprint, Truck, Pencil, AlertCircle, Key, Plus } from "lucide-react";
 import {
   getAllWebsiteSettings,
   createOrUpdateWebsiteSettings,
@@ -100,12 +100,74 @@ const websiteSettingsSchema = z.object({
 
   // Shipping Configuration
   freeShippingThreshold: z.number().min(0, "Threshold must be a positive number").default(0),
+  useWeightBasedShipping: z.boolean().default(false),
+  stateShippingCharges: z.array(z.object({
+    stateName: z.string().min(1, "State name is required"),
+    maxWeightGrams: z.number().min(0, "Must be positive"),
+    charge: z.number().min(0, "Must be positive")
+  })).optional().default([]),
 
   // Payment Configuration
   razorpayKeyId: z.string().optional().or(z.literal("")),
   razorpayKeySecret: z.string().optional().or(z.literal("")),
   razorpayWebhookSecret: z.string().optional().or(z.literal("")),
   bypassPayment: z.boolean().default(false),
+
+  // Google OAuth
+  googleClientId: z.string().optional().or(z.literal("")),
+  googleClientSecret: z.string().optional().or(z.literal("")),
+
+  // NextAuth
+  nextAuthSecret: z.string().optional().or(z.literal("")),
+  nextAuthUrl: z.string().optional().or(z.literal("")),
+
+  // Nodemailer SMTP
+  emailHost: z.string().optional().or(z.literal("")),
+  emailPort: z.preprocess((val) => val === "" || val === null || val === undefined ? undefined : Number(val), z.number().optional()),
+  emailUser: z.string().optional().or(z.literal("")),
+  emailPassword: z.string().optional().or(z.literal("")),
+  emailFrom: z.string().optional().or(z.literal("")),
+  adminEmail: z.string().optional().or(z.literal("")),
+  companyName: z.string().optional().or(z.literal("")),
+
+  // Cloudinary
+  cloudinaryName: z.string().optional().or(z.literal("")),
+  cloudinaryApiKey: z.string().optional().or(z.literal("")),
+  cloudinarySecret: z.string().optional().or(z.literal("")),
+
+  // Stripe
+  stripeApiKey: z.string().optional().or(z.literal("")),
+  stripeSecretWebhook: z.string().optional().or(z.literal("")),
+
+  // SMS/Fast2SMS
+  fast2smsApiKey: z.string().optional().or(z.literal("")),
+  dltTemplateId: z.string().optional().or(z.literal("")),
+  dltEntityId: z.string().optional().or(z.literal("")),
+
+  // Delhivery
+  delhiveryApiToken: z.string().optional().or(z.literal("")),
+  delhiveryB2BUsername: z.string().optional().or(z.literal("")),
+  delhiveryB2BPassword: z.string().optional().or(z.literal("")),
+  warehousePincode: z.string().optional().or(z.literal("")),
+
+  // Zoho Books
+  zohoClientId: z.string().optional().or(z.literal("")),
+  zohoClientSecret: z.string().optional().or(z.literal("")),
+  zohoRefreshToken: z.string().optional().or(z.literal("")),
+  zohoOrganizationId: z.string().optional().or(z.literal("")),
+
+  // Gemini API Keys
+  geminiApiKey: z.string().optional().or(z.literal("")),
+  geminiApiKey2: z.string().optional().or(z.literal("")),
+  geminiApiKey3: z.string().optional().or(z.literal("")),
+  geminiApiKey4: z.string().optional().or(z.literal("")),
+  geminiApiKey5: z.string().optional().or(z.literal("")),
+  geminiApiKey6: z.string().optional().or(z.literal("")),
+  geminiApiKey7: z.string().optional().or(z.literal("")),
+
+  // Business GST Registry Settings
+  businessState: z.string().optional().or(z.literal("")),
+  businessGstin: z.string().optional().or(z.literal("")),
 });
 
 type WebsiteSettingsFormValues = z.infer<typeof websiteSettingsSchema>;
@@ -134,6 +196,8 @@ export default function WebsiteSettingsPage() {
       robots: "index, follow",
       organizationType: "Organization",
       freeShippingThreshold: 0,
+      useWeightBasedShipping: false,
+      stateShippingCharges: [],
       gstStateCd: "27",
       gstBaseUrl: "https://api.gst.gov.in",
       gstClientId: "",
@@ -145,6 +209,42 @@ export default function WebsiteSettingsPage() {
       razorpayKeySecret: "",
       razorpayWebhookSecret: "",
       bypassPayment: false,
+      googleClientId: "",
+      googleClientSecret: "",
+      nextAuthSecret: "",
+      nextAuthUrl: "",
+      emailHost: "",
+      emailPort: undefined,
+      emailUser: "",
+      emailPassword: "",
+      emailFrom: "",
+      adminEmail: "",
+      companyName: "",
+      cloudinaryName: "",
+      cloudinaryApiKey: "",
+      cloudinarySecret: "",
+      stripeApiKey: "",
+      stripeSecretWebhook: "",
+      fast2smsApiKey: "",
+      dltTemplateId: "",
+      dltEntityId: "",
+      delhiveryApiToken: "",
+      delhiveryB2BUsername: "",
+      delhiveryB2BPassword: "",
+      warehousePincode: "",
+      zohoClientId: "",
+      zohoClientSecret: "",
+      zohoRefreshToken: "",
+      zohoOrganizationId: "",
+      geminiApiKey: "",
+      geminiApiKey2: "",
+      geminiApiKey3: "",
+      geminiApiKey4: "",
+      geminiApiKey5: "",
+      geminiApiKey6: "",
+      geminiApiKey7: "",
+      businessState: "",
+      businessGstin: "",
       themeSettings: {
         primaryColor: "#2B2B2B",
         secondaryColor: "#6B7280",
@@ -157,6 +257,11 @@ export default function WebsiteSettingsPage() {
         darkMode: false,
       }
     },
+  });
+
+  const { fields: shippingFields, append: appendShippingCharge, remove: removeShippingCharge } = useFieldArray({
+    control: form.control,
+    name: "stateShippingCharges",
   });
 
   // Load existing settings
@@ -522,42 +627,46 @@ export default function WebsiteSettingsPage() {
       <Form {...form}>
         <form id="website-settings-form" onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-6">
           <Tabs defaultValue="seo" className="w-full">
-            <TabsList className="grid w-full grid-cols-6">
-              <TabsTrigger value="seo" className="flex items-center gap-2">
+            <TabsList className="flex flex-wrap w-full h-auto bg-muted p-1 gap-1 rounded-md mb-4">
+              <TabsTrigger value="seo" className="flex items-center gap-2 px-3 py-1.5 text-sm">
                 <Search className="h-4 w-4" />
                 SEO
               </TabsTrigger>
-              <TabsTrigger value="social" className="flex items-center gap-2">
+              <TabsTrigger value="social" className="flex items-center gap-2 px-3 py-1.5 text-sm">
                 <Globe className="h-4 w-4" />
                 Social
               </TabsTrigger>
-              <TabsTrigger value="favicons" className="flex items-center gap-2">
+              <TabsTrigger value="favicons" className="flex items-center gap-2 px-3 py-1.5 text-sm">
                 <Upload className="h-4 w-4" />
                 Favicons
               </TabsTrigger>
-              <TabsTrigger value="analytics" className="flex items-center gap-2">
+              <TabsTrigger value="analytics" className="flex items-center gap-2 px-3 py-1.5 text-sm">
                 <BarChart className="h-4 w-4" />
                 Analytics
               </TabsTrigger>
-              <TabsTrigger value="schema" className="flex items-center gap-2">
+              <TabsTrigger value="schema" className="flex items-center gap-2 px-3 py-1.5 text-sm">
                 <Settings className="h-4 w-4" />
                 Schema
               </TabsTrigger>
-              <TabsTrigger value="theme" className="flex items-center gap-2">
+              <TabsTrigger value="theme" className="flex items-center gap-2 px-3 py-1.5 text-sm">
                 <Settings className="h-4 w-4" />
                 Theme
               </TabsTrigger>
-              <TabsTrigger value="gst" className="flex items-center gap-2">
+              <TabsTrigger value="gst" className="flex items-center gap-2 px-3 py-1.5 text-sm">
                 <Fingerprint className="h-4 w-4" />
                 GST Settings
               </TabsTrigger>
-              <TabsTrigger value="shipping" className="flex items-center gap-2">
+              <TabsTrigger value="shipping" className="flex items-center gap-2 px-3 py-1.5 text-sm">
                 <Truck className="h-4 w-4" />
                 Shipping
               </TabsTrigger>
-              <TabsTrigger value="payments" className="flex items-center gap-2">
+              <TabsTrigger value="payments" className="flex items-center gap-2 px-3 py-1.5 text-sm">
                 <Fingerprint className="h-4 w-4" />
                 Payments
+              </TabsTrigger>
+              <TabsTrigger value="credentials" className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                <Key className="h-4 w-4" />
+                API Credentials
               </TabsTrigger>
             </TabsList>
 
@@ -1778,6 +1887,121 @@ export default function WebsiteSettingsPage() {
                       </FormItem>
                     )}
                   />
+
+                  <Separator />
+
+                  <div className="space-y-4">
+                    <FormField
+                      control={form.control}
+                      name="useWeightBasedShipping"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                          <div className="space-y-0.5">
+                            <FormLabel className="text-base">Custom Weight-Based Shipping</FormLabel>
+                            <FormDescription>
+                              Enable state-specific custom shipping rules based on item weight.
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+
+                    {form.watch("useWeightBasedShipping") && (
+                      <div className="space-y-4 border rounded-lg p-4 bg-muted/20">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-sm font-semibold">State Shipping Rules</h4>
+                            <p className="text-xs text-muted-foreground">Add weight-based rules per state. Use "Default" to set a fallback for all other states.</p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => appendShippingCharge({ stateName: "", maxWeightGrams: 500, charge: 0 })}
+                          >
+                            <Plus className="h-4 w-4 mr-2" /> Add Rule
+                          </Button>
+                        </div>
+                        
+                        {shippingFields.length === 0 ? (
+                          <div className="text-sm text-center text-muted-foreground py-4 border rounded-md bg-background">
+                            No custom shipping rules defined.
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {shippingFields.map((field, index) => (
+                              <div key={field.id} className="flex gap-3 items-start bg-background p-3 rounded-md border">
+                                <div className="grid grid-cols-3 gap-3 flex-1">
+                                  <FormField
+                                    control={form.control}
+                                    name={`stateShippingCharges.${index}.stateName`}
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel className="text-xs">State / Region</FormLabel>
+                                        <FormControl>
+                                          <Input placeholder="e.g. West Bengal or Default" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                  <FormField
+                                    control={form.control}
+                                    name={`stateShippingCharges.${index}.maxWeightGrams`}
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel className="text-xs">Max Weight (g)</FormLabel>
+                                        <FormControl>
+                                          <Input 
+                                            type="number" 
+                                            {...field} 
+                                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                                          />
+                                        </FormControl>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                  <FormField
+                                    control={form.control}
+                                    name={`stateShippingCharges.${index}.charge`}
+                                    render={({ field }) => (
+                                      <FormItem>
+                                        <FormLabel className="text-xs">Charge (₹)</FormLabel>
+                                        <FormControl>
+                                          <Input 
+                                            type="number" 
+                                            {...field} 
+                                            onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                                          />
+                                        </FormControl>
+                                        <FormMessage />
+                                      </FormItem>
+                                    )}
+                                  />
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="mt-6 text-destructive hover:bg-destructive/10"
+                                  onClick={() => removeShippingCharge(index)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1874,6 +2098,569 @@ export default function WebsiteSettingsPage() {
                       </FormItem>
                     )}
                   />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* API Credentials Tab */}
+            <TabsContent value="credentials" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Key className="h-5 w-5" />
+                    API Credentials & Server Configuration
+                  </CardTitle>
+                  <CardDescription>
+                    Migrate and manage your third-party service credentials securely in the database.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-8">
+                  {/* Google OAuth & NextAuth */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold border-b pb-2">Google OAuth & NextAuth Settings</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="googleClientId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Google Client ID</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter Google Client ID" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="googleClientSecret"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Google Client Secret</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="nextAuthSecret"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>NextAuth Secret</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="nextAuthUrl"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>NextAuth URL</FormLabel>
+                            <FormControl>
+                              <Input placeholder="http://localhost:3000" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Nodemailer SMTP Settings */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold border-b pb-2">SMTP Server Config (Nodemailer)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="emailHost"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>SMTP Host</FormLabel>
+                            <FormControl>
+                              <Input placeholder="smtp.gmail.com" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="emailPort"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>SMTP Port</FormLabel>
+                            <FormControl>
+                              <Input type="number" placeholder="465" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="emailUser"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>SMTP User</FormLabel>
+                            <FormControl>
+                              <Input placeholder="your-email@gmail.com" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="emailPassword"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>SMTP Password</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="emailFrom"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Email From Address</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Vibecart <no-reply@vibecart.com>" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="adminEmail"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Admin Notification Email</FormLabel>
+                            <FormControl>
+                              <Input placeholder="admin@vibecart.com" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="companyName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Company Name</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Vibecart Inc." {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Cloudinary Settings */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold border-b pb-2">Cloudinary Asset Storage</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="cloudinaryName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Cloudinary Cloud Name</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter Cloud Name" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="cloudinaryApiKey"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Cloudinary API Key</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter API Key" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="cloudinarySecret"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Cloudinary Secret</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Stripe Payment Settings */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold border-b pb-2">Stripe Payment Gateway</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="stripeApiKey"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Stripe Secret Api Key</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="stripeSecretWebhook"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Stripe Webhook Secret</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* SMS Settings */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold border-b pb-2">SMS Gateway Config (Fast2SMS / DLT)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="fast2smsApiKey"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Fast2SMS API Key</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="dltTemplateId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>DLT Template ID</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter DLT Template ID" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="dltEntityId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>DLT Entity ID</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter DLT Entity ID" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Delhivery Configuration */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold border-b pb-2">Delhivery Shipping Integration</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="delhiveryApiToken"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Delhivery API Token</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="delhiveryB2BUsername"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Delhivery B2B Username</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter Username" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="delhiveryB2BPassword"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Delhivery B2B Password</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="warehousePincode"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Warehouse Pincode</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter Pincode" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Zoho Books Configuration */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold border-b pb-2">Zoho Books Integration</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="zohoClientId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Zoho Client ID</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter Client ID" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="zohoClientSecret"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Zoho Client Secret</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="zohoRefreshToken"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Zoho Refresh Token</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="zohoOrganizationId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Zoho Organization ID</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter Organization ID" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Gemini API Keys Configuration */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold border-b pb-2">Gemini AI API Keys (Rotation Pool)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="geminiApiKey"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Gemini API Key 1 (Primary)</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="geminiApiKey2"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Gemini API Key 2</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="geminiApiKey3"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Gemini API Key 3</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="geminiApiKey4"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Gemini API Key 4</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="geminiApiKey5"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Gemini API Key 5</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="geminiApiKey6"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Gemini API Key 6</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="geminiApiKey7"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Gemini API Key 7</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Business GST Registry */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold border-b pb-2">Business GST Registry</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="businessState"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Business Origin State</FormLabel>
+                            <FormControl>
+                              <Input placeholder="West Bengal" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="businessGstin"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Business GSTIN</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter Business GSTIN" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>

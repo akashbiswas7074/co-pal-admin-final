@@ -25,7 +25,7 @@ import './featured-review.model';
 import './featured.video.model';
 import './footer.settings.model';
 import './hero-section.model';
-import './home.screen.offers.ts';
+import './home.screen.offers';
 import './influencer-spotlight.model';
 import './navbar-link.model';
 import './navbar.links.model';

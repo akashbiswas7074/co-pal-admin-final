@@ -12,7 +12,7 @@ export async function getStatsTickerData() {
     try {
         await connectToDatabase();
 
-        let ticker = await StatsTicker.findOne({ isActive: true });
+        let ticker = await StatsTicker.findOne({ isActive: true }).lean();
 
         // If no ticker exists, return a default one
         if (!ticker) {
@@ -56,15 +56,41 @@ export async function updateStatsTickerData(data: any) {
         let ticker = await StatsTicker.findOne();
 
         if (ticker) {
-            // Update existing
-            ticker = await StatsTicker.findByIdAndUpdate(
-                ticker._id,
-                { $set: data },
-                { new: true }
+            // Map items explicitly so iconColor/textColor survive Mongoose schema caching
+            const sanitizedItems = (data.items || []).map((item: any) => ({
+                emoji: item.emoji || '',
+                label: item.label || '',
+                iconColor: item.iconColor || '',
+                textColor: item.textColor || '',
+            }));
+
+            // Use updateOne directly on the native collection to bypass schema cache
+            await StatsTicker.collection.updateOne(
+                { _id: ticker._id },
+                {
+                    $set: {
+                        items: sanitizedItems,
+                        backgroundColor: data.backgroundColor,
+                        color1: data.color1,
+                        color2: data.color2,
+                        speed: data.speed,
+                        isActive: data.isActive,
+                        updatedAt: new Date(),
+                    },
+                }
             );
+
+            // Re-fetch the updated document
+            ticker = await StatsTicker.findById(ticker._id).lean();
         } else {
-            // Create new
-            ticker = await StatsTicker.create(data);
+            // Create new with explicit item mapping
+            const sanitizedItems = (data.items || []).map((item: any) => ({
+                emoji: item.emoji || '',
+                label: item.label || '',
+                iconColor: item.iconColor || '',
+                textColor: item.textColor || '',
+            }));
+            ticker = await StatsTicker.create({ ...data, items: sanitizedItems });
         }
 
         revalidatePath("/");

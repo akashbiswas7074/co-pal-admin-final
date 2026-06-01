@@ -22,6 +22,8 @@ import { Plus, Trash, MoveUp, MoveDown } from "lucide-react";
 const itemSchema = z.object({
     emoji: z.string().optional(),
     label: z.string().min(1, "Label is required"),
+    iconColor: z.string().optional(),  // optional per-item icon/emoji color
+    textColor: z.string().optional(),  // optional per-item text color
 });
 
 const formSchema = z.object({
@@ -52,7 +54,7 @@ export default function StatsTickerForm({
         resolver: zodResolver(formSchema),
         defaultValues: {
             items: initialData?.items || [
-                { emoji: "🌿", label: "Vegan & Cruelty-Free" },
+                { emoji: "🌿", label: "Vegan & Cruelty-Free", iconColor: "", textColor: "" },
             ],
             backgroundColor: initialData?.backgroundColor || "linear-gradient(90deg, #22c9a0 0%, #7c3aed 50%, #e879f9 100%)",
             color1: initialData?.color1 || "#22c9a0",
@@ -64,6 +66,25 @@ export default function StatsTickerForm({
 
     const color1 = form.watch("color1");
     const color2 = form.watch("color2");
+
+    // Reset form when initialData loads from DB (including saved iconColor/textColor)
+    React.useEffect(() => {
+        if (initialData) {
+            form.reset({
+                items: (initialData.items || []).map((item: any) => ({
+                    emoji: item.emoji || '',
+                    label: item.label || '',
+                    iconColor: item.iconColor || '',
+                    textColor: item.textColor || '',
+                })),
+                backgroundColor: initialData.backgroundColor || "linear-gradient(90deg, #22c9a0 0%, #7c3aed 50%, #e879f9 100%)",
+                color1: initialData.color1 || "#22c9a0",
+                color2: initialData.color2 || "#e879f9",
+                speed: initialData.speed || 28,
+                isActive: initialData.isActive ?? true,
+            });
+        }
+    }, [initialData]);
 
     React.useEffect(() => {
         if (color1 && color2) {
@@ -206,7 +227,7 @@ export default function StatsTickerForm({
                             variant="outline"
                             size="sm"
                             className="flex items-center gap-2"
-                            onClick={() => append({ emoji: "✨", label: "New Item" })}
+                            onClick={() => append({ emoji: "✨", label: "New Item", iconColor: "", textColor: "" })}
                         >
                             <Plus size={16} /> Add Item
                         </Button>
@@ -231,7 +252,7 @@ export default function StatsTickerForm({
                                             )}
                                         />
                                     </div>
-                                    <div className="sm:col-span-10">
+                                    <div className="sm:col-span-6">
                                         <FormField
                                             control={form.control}
                                             name={`items.${index}.label`}
@@ -240,6 +261,64 @@ export default function StatsTickerForm({
                                                     <FormLabel className="text-xs">Text Label</FormLabel>
                                                     <FormControl>
                                                         <Input placeholder="Vegan & Cruelty-Free" {...field} />
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </div>
+                                    {/* Optional icon color */}
+                                    <div className="sm:col-span-2">
+                                        <FormField
+                                            control={form.control}
+                                            name={`items.${index}.iconColor`}
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel className="text-xs">Icon Color <span className="text-gray-400 font-normal">(optional)</span></FormLabel>
+                                                    <FormControl>
+                                                        <div className="flex gap-1.5 items-center">
+                                                            <input
+                                                                type="color"
+                                                                className="p-0.5 h-8 w-9 cursor-pointer border rounded"
+                                                                value={field.value || '#ffffff'}
+                                                                onChange={(e) => field.onChange(e.target.value)}
+                                                            />
+                                                            <Input
+                                                                placeholder="#ffffff"
+                                                                {...field}
+                                                                value={field.value || ''}
+                                                                className="h-8 text-xs"
+                                                            />
+                                                        </div>
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </div>
+                                    {/* Optional text color */}
+                                    <div className="sm:col-span-2">
+                                        <FormField
+                                            control={form.control}
+                                            name={`items.${index}.textColor`}
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormLabel className="text-xs">Text Color <span className="text-gray-400 font-normal">(optional)</span></FormLabel>
+                                                    <FormControl>
+                                                        <div className="flex gap-1.5 items-center">
+                                                            <input
+                                                                type="color"
+                                                                className="p-0.5 h-8 w-9 cursor-pointer border rounded"
+                                                                value={field.value || '#ffffff'}
+                                                                onChange={(e) => field.onChange(e.target.value)}
+                                                            />
+                                                            <Input
+                                                                placeholder="#ffffff"
+                                                                {...field}
+                                                                value={field.value || ''}
+                                                                className="h-8 text-xs"
+                                                            />
+                                                        </div>
                                                     </FormControl>
                                                     <FormMessage />
                                                 </FormItem>
