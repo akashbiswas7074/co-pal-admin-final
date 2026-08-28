@@ -111,6 +111,10 @@ const websiteSettingsSchema = z.object({
   razorpayKeyId: z.string().optional().or(z.literal("")),
   razorpayKeySecret: z.string().optional().or(z.literal("")),
   razorpayWebhookSecret: z.string().optional().or(z.literal("")),
+  cashfreeAppId: z.string().optional().or(z.literal("")),
+  cashfreeSecretKey: z.string().optional().or(z.literal("")),
+  cashfreeWebhookSecret: z.string().optional().or(z.literal("")),
+  cashfreeEnvironment: z.enum(["sandbox", "production"]).default("sandbox"),
   bypassPayment: z.boolean().default(false),
 
   // Google OAuth
@@ -208,6 +212,10 @@ export default function WebsiteSettingsPage() {
       razorpayKeyId: "",
       razorpayKeySecret: "",
       razorpayWebhookSecret: "",
+      cashfreeAppId: "",
+      cashfreeSecretKey: "",
+      cashfreeWebhookSecret: "",
+      cashfreeEnvironment: "sandbox",
       bypassPayment: false,
       googleClientId: "",
       googleClientSecret: "",
@@ -2012,66 +2020,152 @@ export default function WebsiteSettingsPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Fingerprint className="h-5 w-5" />
-                    Payment Gateway Configuration (Razorpay)
+                    Payment Gateway Configuration (Razorpay & Cashfree)
                   </CardTitle>
                   <CardDescription>
-                    Manage your Razorpay API keys and payment processing behavior.
+                    Manage API keys and payment processing behavior for Razorpay and Cashfree.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <FormField
-                      control={form.control}
-                      name="razorpayKeyId"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Razorpay Key ID</FormLabel>
-                          <FormControl>
-                            <Input placeholder="rzp_live_..." {...field} />
-                          </FormControl>
-                          <FormDescription>
-                            Your public Razorpay Key ID
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="razorpayKeySecret"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Razorpay Key Secret</FormLabel>
-                          <FormControl>
-                            <Input type="password" placeholder="••••••••••••" {...field} />
-                          </FormControl>
-                          <FormDescription>
-                            Keep this secret secure
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                  <div>
+                    <h3 className="text-md font-semibold mb-3">Razorpay Settings</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="razorpayKeyId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Razorpay Key ID</FormLabel>
+                            <FormControl>
+                              <Input placeholder="rzp_live_..." {...field} />
+                            </FormControl>
+                            <FormDescription>
+                              Your public Razorpay Key ID
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="razorpayKeySecret"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Razorpay Key Secret</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormDescription>
+                              Keep this secret secure
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="mt-4">
+                      <FormField
+                        control={form.control}
+                        name="razorpayWebhookSecret"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Razorpay Webhook Secret</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Your webhook secret" {...field} />
+                            </FormControl>
+                            <FormDescription>
+                              Used to verify payment success notifications from Razorpay
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
                   </div>
 
                   <Separator />
 
-                  <FormField
-                    control={form.control}
-                    name="razorpayWebhookSecret"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Razorpay Webhook Secret</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Your webhook secret" {...field} />
-                        </FormControl>
-                        <FormDescription>
-                          Used to verify payment success notifications from Razorpay
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div>
+                    <h3 className="text-md font-semibold mb-3">Cashfree Settings</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="cashfreeAppId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Cashfree App ID (Client ID)</FormLabel>
+                            <FormControl>
+                              <Input placeholder="TEST... or CF..." {...field} />
+                            </FormControl>
+                            <FormDescription>
+                              Your Cashfree App ID from merchant dashboard
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="cashfreeSecretKey"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Cashfree Secret Key</FormLabel>
+                            <FormControl>
+                              <Input type="password" placeholder="••••••••••••" {...field} />
+                            </FormControl>
+                            <FormDescription>
+                              Your Cashfree Client Secret Key
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                      <FormField
+                        control={form.control}
+                        name="cashfreeWebhookSecret"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Cashfree Webhook Secret</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Cashfree Webhook Secret" {...field} />
+                            </FormControl>
+                            <FormDescription>
+                              Optional signature secret for webhooks
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="cashfreeEnvironment"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Cashfree Environment</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value || "sandbox"}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select environment" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="sandbox font-mono">sandbox (Testing)</SelectItem>
+                                <SelectItem value="production font-mono">production (Live)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              Set to sandbox for testing, production for live payments
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
 
                   <Separator />
 

@@ -65,6 +65,10 @@ export interface IWebsiteSettings extends Document {
   razorpayKeyId?: string;
   razorpayKeySecret?: string;
   razorpayWebhookSecret?: string;
+  cashfreeAppId?: string;
+  cashfreeSecretKey?: string;
+  cashfreeWebhookSecret?: string;
+  cashfreeEnvironment?: 'sandbox' | 'production';
   bypassPayment: boolean;
   // Schema.org
   organizationName?: string;
@@ -310,6 +314,23 @@ const WebsiteSettingsSchema = new Schema<IWebsiteSettings>({
     type: String,
     trim: true
   },
+  cashfreeAppId: {
+    type: String,
+    trim: true
+  },
+  cashfreeSecretKey: {
+    type: String,
+    trim: true
+  },
+  cashfreeWebhookSecret: {
+    type: String,
+    trim: true
+  },
+  cashfreeEnvironment: {
+    type: String,
+    enum: ['sandbox', 'production'],
+    default: 'sandbox'
+  },
   bypassPayment: {
     type: Boolean,
     default: false
@@ -407,7 +428,7 @@ WebsiteSettingsSchema.pre('save', async function() {
 // Force re-registration of the model if it exists but is missing new schema paths (useful for development)
 if (mongoose.models.WebsiteSettings) {
   const schema = (mongoose.models.WebsiteSettings as any).schema;
-  if (!schema.path('freeShippingThreshold') || !schema.path('googleClientId') || !schema.path('gstClientId') || !schema.path('razorpayKeyId') || !schema.path('bypassPayment') || !schema.path('useWeightBasedShipping')) {
+  if (!schema.path('freeShippingThreshold') || !schema.path('googleClientId') || !schema.path('gstClientId') || !schema.path('razorpayKeyId') || !schema.path('cashfreeAppId') || !schema.path('bypassPayment') || !schema.path('useWeightBasedShipping')) {
     delete (mongoose.models as any).WebsiteSettings;
   }
 }
