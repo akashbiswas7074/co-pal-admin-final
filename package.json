@@ -10,7 +10,7 @@
     "definition": "./tsconfig.json"
   },
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev -H 0.0.0.0",
     "prebuild": "rm -rf app/\\(public\\)",
     "build": "next build --webpack",
     "start": "next start",
