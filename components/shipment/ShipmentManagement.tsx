@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,7 +28,11 @@ import {
   AlertCircle,
   PhoneCall,
   MapPin,
-  Calendar
+  Calendar,
+  Trash2,
+  Copy,
+  ExternalLink,
+  Plus
 } from 'lucide-react';
 import { ShippingLabelGenerator } from './ShippingLabelGenerator';
 
@@ -35,11 +40,14 @@ interface Shipment {
   _id: string;
   orderId: {
     _id: string;
-    customerName: string;
-    total: number;
-    status: string;
-    paymentMethod: string;
-  };
+    customerName?: string;
+    total?: number;
+    totalAmount?: number;
+    status?: string;
+    paymentMethod?: string;
+    isPaid?: boolean;
+    paymentStatus?: string;
+  } | any;
   waybillNumbers: string[];
   primaryWaybill: string;
   shipmentType: string;
@@ -72,6 +80,8 @@ interface Shipment {
   };
   createdAt: string;
   updatedAt: string;
+  shipmentDate?: string | null;
+  orderCreatedAt?: string | null;
 }
 
 interface EditFormData {
@@ -89,10 +99,14 @@ interface EditFormData {
 }
 
 export default function ShipmentManagement() {
+  const searchParams = useSearchParams();
+  const urlOrderId = searchParams?.get('orderId') || '';
+
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [orderIdFilter, setOrderIdFilter] = useState(urlOrderId);
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
@@ -104,6 +118,10 @@ export default function ShipmentManagement() {
   const [success, setSuccess] = useState<string | null>(null);
   const [showLabelGenerator, setShowLabelGenerator] = useState(false);
   const [selectedWaybill, setSelectedWaybill] = useState<string>('');
+  const [shipmentToDelete, setShipmentToDelete] = useState<Shipment | null>(null);
+  const [deleteOrderToo, setDeleteOrderToo] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [copiedText, setCopiedText] = useState<string | null>(null);
 
   // New state for Delhivery API features
   const [showPickupDialog, setShowPickupDialog] = useState(false);
@@ -126,9 +144,80 @@ export default function ShipmentManagement() {
   const [fetchingWarehouses, setFetchingWarehouses] = useState(false);
 
   useEffect(() => {
+    if (urlOrderId) {
+      setOrderIdFilter(urlOrderId);
+    }
+  }, [urlOrderId]);
+
+  useEffect(() => {
     fetchShipments();
     fetchWarehouses();
-  }, [currentPage, statusFilter, typeFilter, searchTerm]);
+  }, [currentPage, statusFilter, typeFilter, searchTerm, orderIdFilter]);
+
+  const copyToClipboard = (text: string, label: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedText(label);
+    setSuccess(`${label} copied to clipboard!`);
+    setTimeout(() => {
+      setCopiedText(null);
+      setSuccess(null);
+    }, 2500);
+  };
+
+  const formatShipmentDate = (dateStr: string) => {
+    if (!dateStr) return 'N/A';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return 'N/A';
+      return d.toLocaleString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const handleDeleteShipment = async (shipment: Shipment, deleteFullOrder: boolean = false) => {
+    try {
+      setDeleteLoading(true);
+      setError(null);
+
+      const orderId = typeof shipment.orderId === 'object' ? shipment.orderId?._id : shipment.orderId;
+      const params = new URLSearchParams({ action: 'delete' });
+      if (shipment._id) params.set('id', shipment._id);
+      if (shipment.primaryWaybill) params.set('waybill', shipment.primaryWaybill);
+      if (orderId) params.set('orderId', String(orderId));
+      if (deleteFullOrder) params.set('deleteOrder', 'true');
+
+      // Optimistically remove from state for instant feedback
+      setShipments(prev => prev.filter(s => s._id !== shipment._id && s.primaryWaybill !== shipment.primaryWaybill));
+
+      const response = await fetch(`/api/shipment?${params.toString()}`, {
+        method: 'DELETE'
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        setSuccess(deleteFullOrder ? 'Order and shipment deleted permanently' : 'Shipment deleted successfully');
+        setShipmentToDelete(null);
+        await fetchShipments();
+      } else {
+        await fetchShipments(); // rollback
+        throw new Error(result.error || 'Failed to delete shipment');
+      }
+    } catch (err: any) {
+      console.error('Error deleting shipment:', err);
+      setError(err.message || 'Failed to delete shipment');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   const fetchWarehouses = async () => {
     try {
@@ -176,10 +265,11 @@ export default function ShipmentManagement() {
       const params = new URLSearchParams({
         useNew: 'true',
         page: currentPage.toString(),
-        limit: '10',
+        limit: '50',
         ...(statusFilter !== 'all' && { status: statusFilter }),
         ...(typeFilter !== 'all' && { shipmentType: typeFilter }),
-        ...(searchTerm && { waybill: searchTerm })
+        ...(searchTerm && { waybill: searchTerm }),
+        ...(orderIdFilter && { orderId: orderIdFilter })
       });
 
       const response = await fetch(`/api/shipment/list?${params}`);
@@ -311,7 +401,10 @@ export default function ShipmentManagement() {
     }
   };
 
-  const handleTrackShipment = async () => {
+  const handleTrackShipment = async (overrideWaybill?: string) => {
+    const wb = (typeof overrideWaybill === 'string' && overrideWaybill) ? overrideWaybill : trackingWaybill;
+    if (!wb) return;
+
     try {
       setEditLoading(true);
       setError(null);
@@ -344,7 +437,7 @@ export default function ShipmentManagement() {
         return;
       }
 
-      const response = await fetch(`/api/delhivery/tracking?waybill=${trackingWaybill}`);
+      const response = await fetch(`/api/delhivery/tracking?waybill=${wb}`);
       const result = await response.json();
 
       if (result.success) {
@@ -522,6 +615,32 @@ export default function ShipmentManagement() {
         </Alert>
       )}
 
+      {/* Active Order Filter Banner */}
+      {orderIdFilter && (
+        <Alert className="bg-blue-50 border-blue-200 text-blue-900 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Package className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-900 font-medium text-sm">
+              Showing shipments for Order ID: <span className="font-mono font-bold text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-300">{orderIdFilter}</span>
+            </AlertDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 border-blue-300 text-blue-700 hover:bg-blue-100"
+            onClick={() => {
+              setOrderIdFilter('');
+              const url = new URL(window.location.href);
+              url.searchParams.delete('orderId');
+              window.history.replaceState({}, '', url.toString());
+            }}
+          >
+            <X className="h-3.5 w-3.5 mr-1" />
+            Clear Order Filter
+          </Button>
+        </Alert>
+      )}
+
       {/* Filters */}
       <Card>
         <CardHeader>
@@ -533,10 +652,10 @@ export default function ShipmentManagement() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <Label htmlFor="search">Search Waybill</Label>
+              <Label htmlFor="search">Search Waybill / Order ID</Label>
               <Input
                 id="search"
-                placeholder="Enter waybill number..."
+                placeholder="Enter waybill or order ID..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -549,6 +668,7 @@ export default function ShipmentManagement() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="Pending">Pending</SelectItem>
                   <SelectItem value="Created">Created</SelectItem>
                   <SelectItem value="Manifested">Manifested</SelectItem>
                   <SelectItem value="In Transit">In Transit</SelectItem>
@@ -575,9 +695,13 @@ export default function ShipmentManagement() {
             <div className="flex items-end">
               <Button onClick={() => {
                 setSearchTerm('');
+                setOrderIdFilter('');
                 setStatusFilter('all');
                 setTypeFilter('all');
                 setCurrentPage(1);
+                const url = new URL(window.location.href);
+                url.searchParams.delete('orderId');
+                window.history.replaceState({}, '', url.toString());
               }} variant="outline" className="w-full">
                 Clear Filters
               </Button>
@@ -589,7 +713,14 @@ export default function ShipmentManagement() {
       {/* Shipments List */}
       <Card>
         <CardHeader>
-          <CardTitle>Shipments ({shipments.length})</CardTitle>
+          <div className="flex justify-between items-center">
+            <CardTitle>Shipments ({shipments.length})</CardTitle>
+            {orderIdFilter && (
+              <Badge variant="outline" className="text-blue-600 border-blue-300">
+                Filtered by Order
+              </Badge>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -601,127 +732,270 @@ export default function ShipmentManagement() {
             <div className="text-center py-8">
               <Package className="h-12 w-12 mx-auto text-gray-400 mb-4" />
               <p className="text-gray-500">No shipments found</p>
+              {orderIdFilter && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => {
+                    setOrderIdFilter('');
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('orderId');
+                    window.history.replaceState({}, '', url.toString());
+                  }}
+                >
+                  View All Shipments
+                </Button>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
-              {shipments.map((shipment) => (
-                <Card key={shipment._id} className="border-l-4 border-l-blue-500">
-                  <CardContent className="p-4">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="font-semibold">{shipment.primaryWaybill}</h3>
-                          <Badge className={getStatusColor(shipment.status)}>
-                            {getStatusIcon(shipment.status)}
-                            <span className="ml-1">{shipment.status}</span>
-                          </Badge>
-                          <Badge variant="outline">{shipment.shipmentType}</Badge>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-gray-600">
-                          <div>
-                            <strong>Customer:</strong> {shipment.customerDetails.name}
-                          </div>
-                          <div className="md:col-span-1">
-                            <strong>Products:</strong> {shipment.packageDetails.productDescription?.split(' (#')[0] || 'General Items'}
-                            {shipment.packageDetails.productDescription?.includes('(#') && (
-                              <span className="ml-2 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">
-                                Item: {shipment.packageDetails.productDescription.split('(#')[1].replace(')', '')}
+              {shipments.map((shipment) => {
+                const orderIdStr = typeof shipment.orderId === 'object'
+                  ? (shipment.orderId?._id || '')
+                  : String(shipment.orderId || '');
+                const orderObj = typeof shipment.orderId === 'object' ? shipment.orderId : null;
+                const isPaid = Boolean(orderObj?.isPaid || orderObj?.paymentStatus?.toLowerCase() === 'paid');
+                const isCod = shipment.packageDetails?.paymentMode?.toUpperCase() === 'COD' || orderObj?.paymentMethod?.toLowerCase() === 'cod';
+                const orderTotal = orderObj ? (orderObj?.total || orderObj?.totalAmount) : null;
+                const isPendingWaybill = !shipment.primaryWaybill || ['Pending Label', 'Pending Generation', 'Not Generated'].includes(shipment.primaryWaybill);
+                const orderDateStr = shipment.orderCreatedAt || orderObj?.createdAt;
+                const shipmentDateStr = shipment.shipmentDate || (!isPendingWaybill ? shipment.createdAt : null);
+
+                return (
+                  <Card key={shipment._id} className="border-l-4 border-l-blue-500 hover:shadow-md transition-shadow">
+                    <CardContent className="p-4">
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                        <div className="flex-1">
+                          {/* Top Badges & Waybill */}
+                          <div className="flex flex-wrap items-center gap-2 mb-2.5">
+                            {/* Waybill */}
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 dark:bg-slate-800 rounded border border-slate-300 dark:border-slate-700 text-xs">
+                              <span className="text-slate-500 font-medium">Waybill:</span>
+                              <span className="font-mono font-bold text-sm text-slate-900 dark:text-slate-100">
+                                {shipment.primaryWaybill}
                               </span>
+                              {!isPendingWaybill && (
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(shipment.primaryWaybill, 'Waybill')}
+                                  title="Copy Waybill"
+                                  className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors ml-1"
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Status */}
+                            <Badge className={getStatusColor(shipment.status)}>
+                              {getStatusIcon(shipment.status)}
+                              <span className="ml-1 font-semibold">{shipment.status}</span>
+                            </Badge>
+
+                            {/* Type */}
+                            <Badge variant="outline">{shipment.shipmentType}</Badge>
+
+                            {/* Payment Status Badge */}
+                            {isPaid ? (
+                              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-medium">
+                                Paid {orderTotal ? `(₹${orderTotal})` : ''}
+                              </Badge>
+                            ) : isCod ? (
+                              <Badge className="bg-amber-100 text-amber-800 border-amber-300 font-medium">
+                                COD {orderTotal ? `(₹${orderTotal})` : ''}
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-rose-100 text-rose-800 border-rose-300 font-medium">
+                                Unpaid {orderTotal ? `(₹${orderTotal})` : ''}
+                              </Badge>
                             )}
                           </div>
-                          <div>
-                            <strong>Order Ref:</strong> {shipment.orderId?._id ? `...${shipment.orderId._id.slice(-8)}` : (shipment.orderId?.toString().slice(-8) || 'N/A')}
+
+                          {/* Details Grid - Cleanly Separated */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-5 gap-y-2 text-xs text-gray-700">
+                            {/* Full Order ID */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <strong className="text-gray-500 font-medium">Order ID:</strong>
+                              {orderIdStr ? (
+                                <div className="flex items-center gap-1">
+                                  <a
+                                    href={`/admin/dashboard/orders/view/${orderIdStr}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="font-mono text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-0.5"
+                                    title="Open Order Details"
+                                  >
+                                    {orderIdStr}
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(orderIdStr, 'Order ID')}
+                                    title="Copy Order ID"
+                                    className="text-gray-400 hover:text-gray-700 transition-colors"
+                                  >
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 text-xs">N/A</span>
+                              )}
+                            </div>
+
+                            {/* Shipment Creation Date */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <strong className="text-gray-500 font-medium">Shipment Date:</strong>
+                              <span className="flex items-center gap-1 text-slate-800 dark:text-slate-200 font-medium">
+                                <Calendar className="h-3.5 w-3.5 text-blue-500" />
+                                {shipmentDateStr ? formatShipmentDate(shipmentDateStr) : 'Pending Creation'}
+                              </span>
+                            </div>
+
+                            {/* Order Placement Date */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <strong className="text-gray-500 font-medium">Order Placed:</strong>
+                              <span className="flex items-center gap-1 text-gray-700 dark:text-gray-300">
+                                <Clock className="h-3.5 w-3.5 text-gray-400" />
+                                {formatShipmentDate(orderDateStr)}
+                              </span>
+                            </div>
+
+                            {/* Customer */}
+                            <div className="flex items-center gap-1.5">
+                              <strong className="text-gray-500 font-medium">Customer:</strong>
+                              <span className="font-medium text-gray-900 dark:text-gray-100">{shipment.customerDetails?.name || 'Customer'}</span>
+                            </div>
+
+                            {/* Products */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <strong className="text-gray-500 font-medium">Products:</strong>
+                              <span className="text-gray-800 dark:text-gray-200">{shipment.packageDetails?.productDescription?.split(' (#')[0] || 'General Items'}</span>
+                              {shipment.packageDetails?.productDescription?.includes('(#') && (
+                                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">
+                                  Item: {shipment.packageDetails.productDescription.split('(#')[1].replace(')', '')}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* City / Weight / Phone */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <strong className="text-gray-500 font-medium">City / Weight:</strong>
+                              <span>{shipment.customerDetails?.city || '--'} • {shipment.packageDetails?.weight || 0}g</span>
+                              {shipment.customerDetails?.phone && shipment.customerDetails.phone !== '--' && (
+                                <span className="text-gray-400 ml-1">({shipment.customerDetails.phone})</span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-gray-600 mt-1">
-                          <div>
-                            <strong>Phone:</strong> {shipment.customerDetails.phone}
-                          </div>
-                          <div>
-                            <strong>City:</strong> {shipment.customerDetails.city}
-                          </div>
-                          <div>
-                            <strong>Weight:</strong> {shipment.packageDetails.weight}g
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleGenerateLabel(shipment)}
-                          className="flex items-center gap-1"
-                        >
-                          <FileText className="h-4 w-4" />
-                          Label
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => window.open(`/admin/dashboard/orders/invoice/${shipment.orderId?._id || shipment.orderId}?waybill=${shipment.primaryWaybill}`, '_blank')}
-                          className="flex items-center gap-1 border-purple-200 text-purple-700 hover:bg-purple-50"
-                        >
-                          <FileText className="h-4 w-4" />
-                          Bill
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setTrackingWaybill(shipment.primaryWaybill);
-                            setShowTrackingDialog(true);
-                          }}
-                          className="flex items-center gap-1"
-                        >
-                          <MapPin className="h-4 w-4" />
-                          Track
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setDocumentWaybill(shipment.primaryWaybill);
-                            setShowDocumentDialog(true);
-                          }}
-                          className="flex items-center gap-1"
-                        >
-                          <Download className="h-4 w-4" />
-                          Document
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setShowPickupDialog(true)}
-                          className="flex items-center gap-1"
-                        >
-                          <PhoneCall className="h-4 w-4" />
-                          Pickup
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEditDialog(shipment)}
-                          className="flex items-center gap-1"
-                        >
-                          <Edit className="h-4 w-4" />
-                          Edit
-                        </Button>
-                        {shipment.status !== 'Cancelled' && shipment.status !== 'Delivered' && (
+
+                        {/* Actions */}
+                        <div className="flex flex-wrap gap-2 items-center">
+                          {isPendingWaybill ? (
+                            <Button
+                              size="sm"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium flex items-center gap-1"
+                              onClick={() => {
+                                window.location.href = `/admin/dashboard/shipment?tab=create&orderId=${orderIdStr}`;
+                              }}
+                            >
+                              <Plus className="h-4 w-4" />
+                              Create Shipment
+                            </Button>
+                          ) : (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleGenerateLabel(shipment)}
+                                className="flex items-center gap-1"
+                              >
+                                <FileText className="h-4 w-4" />
+                                Label
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => window.open(`/admin/dashboard/orders/invoice/${orderIdStr}?waybill=${shipment.primaryWaybill}`, '_blank')}
+                                className="flex items-center gap-1 border-purple-200 text-purple-700 hover:bg-purple-50"
+                              >
+                                <FileText className="h-4 w-4" />
+                                Bill
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setTrackingWaybill(shipment.primaryWaybill);
+                                  setShowTrackingDialog(true);
+                                  handleTrackShipment(shipment.primaryWaybill);
+                                }}
+                                className="flex items-center gap-1"
+                              >
+                                <MapPin className="h-4 w-4" />
+                                Track
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setDocumentWaybill(shipment.primaryWaybill);
+                                  setShowDocumentDialog(true);
+                                }}
+                                className="flex items-center gap-1"
+                              >
+                                <Download className="h-4 w-4" />
+                                Document
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setShowPickupDialog(true)}
+                                className="flex items-center gap-1"
+                              >
+                                <PhoneCall className="h-4 w-4" />
+                                Pickup
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openEditDialog(shipment)}
+                                className="flex items-center gap-1"
+                              >
+                                <Edit className="h-4 w-4" />
+                                Edit
+                              </Button>
+                              {shipment.status !== 'Cancelled' && shipment.status !== 'Delivered' && (
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => handleCancelShipment(shipment.primaryWaybill)}
+                                  className="flex items-center gap-1"
+                                >
+                                  <X className="h-4 w-4" />
+                                  Cancel
+                                </Button>
+                              )}
+                            </>
+                          )}
+
+                          {/* Delete Shipment Button */}
                           <Button
                             size="sm"
-                            variant="destructive"
-                            onClick={() => handleCancelShipment(shipment.primaryWaybill)}
-                            className="flex items-center gap-1"
+                            variant="outline"
+                            onClick={() => setShipmentToDelete(shipment)}
+                            className="flex items-center gap-1 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+                            title="Delete this shipment"
                           >
-                            <X className="h-4 w-4" />
-                            Cancel
+                            <Trash2 className="h-4 w-4" />
+                            Delete
                           </Button>
-                        )}
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </CardContent>
@@ -1034,7 +1308,7 @@ export default function ShipmentManagement() {
               </div>
               <div className="flex items-end">
                 <Button
-                  onClick={handleTrackShipment}
+                  onClick={() => handleTrackShipment()}
                   disabled={editLoading || !trackingWaybill}
                 >
                   {editLoading ? (
@@ -1173,6 +1447,91 @@ export default function ShipmentManagement() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Shipment Confirmation Dialog */}
+      {shipmentToDelete && (
+        <Dialog open={!!shipmentToDelete} onOpenChange={(open) => !open && setShipmentToDelete(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-600">
+                <Trash2 className="h-5 w-5" />
+                Delete Shipment Permanently
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-3 space-y-3 text-sm text-gray-600">
+              <p>
+                Are you sure you want to permanently delete this shipment?
+              </p>
+              <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded border space-y-1.5 text-xs font-sans">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Waybill:</span>
+                  <span className="font-mono font-bold text-gray-900 dark:text-gray-100">{shipmentToDelete.primaryWaybill}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Order ID:</span>
+                  <span className="font-mono font-medium text-blue-600">
+                    {typeof shipmentToDelete.orderId === 'object'
+                      ? shipmentToDelete.orderId?._id
+                      : shipmentToDelete.orderId || 'N/A'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Customer:</span>
+                  <span className="font-medium text-gray-800 dark:text-gray-200">{shipmentToDelete.customerDetails?.name || 'Customer'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Status:</span>
+                  <span className="font-medium">{shipmentToDelete.status}</span>
+                </div>
+              </div>
+              <div className="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded text-red-800 dark:text-red-300 text-xs leading-relaxed">
+                ⚠️ <strong>Warning:</strong> This will completely remove the shipment record from the database and clear waybill references.
+              </div>
+
+              {/* Optional: delete order permanently */}
+              <label className="flex items-start gap-2.5 p-2.5 rounded border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/20 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={deleteOrderToo}
+                  onChange={(e) => setDeleteOrderToo(e.target.checked)}
+                  className="mt-0.5 rounded border-red-300 text-red-600 focus:ring-red-500 h-4 w-4"
+                />
+                <div className="text-xs">
+                  <span className="font-semibold text-red-900 dark:text-red-200">Also permanently delete this order</span>
+                  <p className="text-gray-500 dark:text-gray-400 mt-0.5">Completely removes this order record from the database so it never shows anywhere.</p>
+                </div>
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setShipmentToDelete(null)}
+                disabled={deleteLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => handleDeleteShipment(shipmentToDelete, deleteOrderToo)}
+                disabled={deleteLoading}
+                className="bg-red-600 hover:bg-red-700 text-white font-medium"
+              >
+                {deleteLoading ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin mr-1.5" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4 mr-1.5" />
+                    Delete Permanently
+                  </>
+                )}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

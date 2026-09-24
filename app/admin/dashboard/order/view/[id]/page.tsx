@@ -21,6 +21,7 @@ import {
   Table, // For displaying order items
   Button, // For actions
   Card, // For better layout sections
+  Modal, // For delete confirmation
 } from "@mantine/core";
 import {
   IconCircleCheck,
@@ -38,7 +39,8 @@ import {
   IconInfoCircle,
   IconListDetails,
   IconBuildingStore,
-  IconLink
+  IconLink,
+  IconTrash
 } from "@tabler/icons-react";
 import { useParams, useRouter } from "next/navigation"; // Added useRouter
 import Link from "next/link"; // For linking to product pages
@@ -51,6 +53,28 @@ const OrderViewPage = ({ params }: { params: Promise<{ id: string }> }) => {
   const [error, setError] = useState<string | null>(null);
   const [vendorDetails, setVendorDetails] = useState<Record<string, any>>({});
   const [loadingVendors, setLoadingVendors] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/admin/orders/${idFromParams}`, {
+        method: "DELETE",
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        router.push("/admin/dashboard/orders");
+      } else {
+        alert(data.error || data.message || "Failed to delete order");
+      }
+    } catch (err: any) {
+      console.error("Error deleting order:", err);
+      alert(err.message || "Failed to delete order");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     if (idFromParams) {
@@ -173,14 +197,44 @@ const OrderViewPage = ({ params }: { params: Promise<{ id: string }> }) => {
             </Title>
             <Text c="dimmed">Order ID: {order._id}</Text>
           </div>
-          <Badge
-            color={order.isPaid ? "green" : "red"}
-            variant="light"
-            size="lg"
-          >
-            {order.isPaid ? "Paid" : "Not Paid"}
-          </Badge>
+          <Group>
+            <Badge
+              color={order.isPaid ? "green" : "red"}
+              variant="light"
+              size="lg"
+            >
+              {order.isPaid ? "Paid" : "Not Paid"}
+            </Badge>
+            <Button
+              color="red"
+              variant="outline"
+              leftSection={<IconTrash size={16} />}
+              onClick={() => setDeleteOpen(true)}
+            >
+              Delete Order
+            </Button>
+          </Group>
         </Group>
+
+        {/* Delete Confirmation Modal */}
+        <Modal
+          opened={deleteOpen}
+          onClose={() => !deleting && setDeleteOpen(false)}
+          title="Delete Order Permanently"
+          centered
+        >
+          <Text size="sm" mb="md">
+            Are you sure you want to delete order <strong>#{order._id}</strong>? This action cannot be undone.
+          </Text>
+          <Group justify="flex-end" mt="md">
+            <Button variant="default" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button color="red" onClick={handleDelete} loading={deleting}>
+              Delete Permanently
+            </Button>
+          </Group>
+        </Modal>
 
         <Divider my="lg" />
 

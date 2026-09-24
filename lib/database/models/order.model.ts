@@ -235,6 +235,10 @@ const orderSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    shipmentDismissed: {
+      type: Boolean,
+      default: false,
+    },
     shipmentDetails: {
       type: mongoose.Schema.Types.Mixed,
       default: null,

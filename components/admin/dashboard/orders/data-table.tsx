@@ -18,7 +18,7 @@ import styles from "./styles.module.css";
 
 import { FaCheckCircle } from "react-icons/fa";
 import { IoIosCloseCircle } from "react-icons/io";
-import { CheckCircle, Description as IconFileDescription, HelpOutline, LocalShipping as Package } from "@mui/icons-material"; // Added Package
+import { CheckCircle, Description as IconFileDescription, HelpOutline, LocalShipping as Package, DeleteOutline as DeleteIcon } from "@mui/icons-material"; // Added Package, DeleteIcon
 // import PopupModal from "@/components/PopupModal";
 // import axios from "axios";
 import { useRouter } from "next/navigation";
@@ -132,6 +132,32 @@ function Row(props: RowProps) { // Use defined RowProps
 
   // State for order-level status change
   const [orderLevelLoading, setOrderLevelLoading] = useState(false);
+
+  // State for delete confirmation
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteOrder = async () => {
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/admin/orders/${row._id}`, {
+        method: "DELETE",
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        showSnackbar(data.message || `Order #${row._id} deleted successfully`, "success");
+        setDeleteDialogOpen(false);
+        refreshOrders();
+      } else {
+        throw new Error(data.error || data.message || "Failed to delete order");
+      }
+    } catch (err: any) {
+      console.error("Error deleting order:", err);
+      showSnackbar(err.message || "Failed to delete order", "error");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const handleOpenModal = (orderId: string, productId: string, status: string, currentTrackingUrl?: string, currentTrackingId?: string) => {
     setModalContext({ orderId, productId, status, currentTrackingUrl, currentTrackingId });
@@ -534,6 +560,31 @@ function Row(props: RowProps) { // Use defined RowProps
               shipmentCreated={row.shipmentCreated}
               className="text-sm"
             />
+
+            {/* Delete Order Button */}
+            <Button
+              variant="outlined"
+              size="small"
+              color="error"
+              startIcon={<DeleteIcon sx={{ fontSize: "14px !important" }} />}
+              onClick={() => setDeleteDialogOpen(true)}
+              sx={{
+                marginTop: '4px',
+                fontSize: '0.7rem',
+                padding: '2px 8px',
+                width: '100%',
+                justifyContent: 'center',
+                textTransform: 'none',
+                color: '#d32f2f',
+                borderColor: '#ef9a9a',
+                '&:hover': {
+                  backgroundColor: '#ffebee',
+                  borderColor: '#d32f2f'
+                }
+              }}
+            >
+              Delete Order
+            </Button>
           </div>
         </TableCell>
       </TableRow><TableRow>
@@ -806,6 +857,48 @@ function Row(props: RowProps) { // Use defined RowProps
           </Collapse>
         </TableCell>
       </TableRow>
+
+      {/* Delete Order Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => !deleting && setDeleteDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: '#d32f2f', fontWeight: 'bold' }}>
+          Delete Order
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 1.5, color: '#374151' }}>
+            Are you sure you want to permanently delete order <strong>#{row._id}</strong>?
+          </Typography>
+          <Typography variant="caption" sx={{ color: '#6b7280', display: 'block', backgroundColor: '#fef2f2', p: 1.5, borderRadius: 1, border: '1px solid #fee2e2' }}>
+            ⚠️ <strong>Warning:</strong> This will permanently delete this order and its records. This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={() => setDeleteDialogOpen(false)}
+            disabled={deleting}
+            color="inherit"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleDeleteOrder}
+            variant="contained"
+            color="error"
+            disabled={deleting}
+            startIcon={deleting ? <CircularProgress size={16} color="inherit" /> : null}
+            sx={{
+              backgroundColor: '#dc2626',
+              '&:hover': { backgroundColor: '#b91c1c' }
+            }}
+          >
+            {deleting ? 'Deleting...' : 'Delete Permanently'}
+          </Button>
+        </DialogActions>
+      </Dialog>
       {/* REMOVE Snackbar from here */}
       {/* 
       <Snackbar open={snackbarOpen} autoHideDuration={6000} onClose={handleCloseSnackbar}>

@@ -57,7 +57,7 @@ const ShipmentSchema = new mongoose.Schema(
       productDescription: String,
       paymentMode: {
         type: String,
-        enum: ['COD', 'Pre-paid', 'Pickup', 'REPL']
+        enum: ['COD', 'Pre-paid', 'Prepaid', 'Pickup', 'REPL', 'cod', 'prepaid', 'Online']
       },
       codAmount: Number
     },

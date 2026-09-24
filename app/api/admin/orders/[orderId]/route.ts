@@ -83,3 +83,44 @@ export async function GET(
     }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ orderId: string }> | { orderId: string } }
+) {
+  try {
+    await connectToDatabase();
+    
+    const { orderId } = await params;
+    
+    if (!orderId) {
+      return NextResponse.json(
+        { success: false, error: 'Order ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const deletedOrder = await Order.findByIdAndDelete(orderId);
+
+    if (!deletedOrder) {
+      return NextResponse.json(
+        { success: false, error: 'Order not found or already deleted' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Order #${orderId} deleted successfully`,
+      deletedId: orderId
+    });
+  } catch (error: any) {
+    console.error('[Admin Order DELETE API] Error:', error);
+    
+    return NextResponse.json({
+      success: false,
+      error: error.message || 'Failed to delete order'
+    }, { status: 500 });
+  }
+}
+

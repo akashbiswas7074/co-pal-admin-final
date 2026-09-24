@@ -108,10 +108,15 @@ function UnifiedShipmentPageContent() {
 
     const orderIdFromUrl = searchParams.get('orderId');
     const itemIdFromUrl = searchParams.get('itemId');
-    if (orderIdFromUrl && orders.length > 0) {
+    const tabFromUrl = searchParams.get('tab');
+    if (tabFromUrl) {
+      setActiveTab(tabFromUrl);
+    } else if (orderIdFromUrl) {
       setSelectedOrderId(orderIdFromUrl);
       // If itemId is provided, go directly to create tab for individual product shipment
-      setActiveTab(itemIdFromUrl ? 'create' : 'orders');
+      if (itemIdFromUrl) {
+        setActiveTab('create');
+      }
     }
   }, [searchParams, orders]);
 
@@ -614,7 +619,16 @@ function UnifiedShipmentPageContent() {
 
         {/* Create Shipment Tab */}
         <TabsContent value="create" className="space-y-6">
-          <ShipmentDashboard selectedOrderId={selectedOrderId} preSelectedItemId={searchParams?.get('itemId') || undefined} />
+          <ShipmentDashboard 
+            selectedOrderId={selectedOrderId} 
+            preSelectedItemId={searchParams?.get('itemId') || undefined}
+            onNavigateToShipments={() => {
+              setActiveTab('shipments');
+              const url = new URL(window.location.href);
+              url.searchParams.set('tab', 'shipments');
+              window.history.pushState({}, '', url.toString());
+            }}
+          />
         </TabsContent>
 
         {/* Manage Shipments Tab */}

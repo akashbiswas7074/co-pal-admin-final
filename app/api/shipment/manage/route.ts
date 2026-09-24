@@ -34,11 +34,24 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// DELETE: Cancel shipment
+// DELETE: Cancel or Delete shipment
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const waybill = searchParams.get('waybill');
+    const id = searchParams.get('id');
+    const orderId = searchParams.get('orderId');
+    const action = searchParams.get('action'); // 'delete' or 'cancel'
+
+    if (action === 'delete' || id || searchParams.get('permanent') === 'true') {
+      console.log('[Shipment Management API] Deleting shipment permanently:', { id, waybill, orderId });
+      const result = await shipmentService.deleteShipment({
+        id: id || undefined,
+        waybill: waybill || undefined,
+        orderId: orderId || undefined
+      });
+      return NextResponse.json(result, { status: result.success ? 200 : 400 });
+    }
 
     if (!waybill) {
       return NextResponse.json({
@@ -57,7 +70,7 @@ export async function DELETE(request: NextRequest) {
     console.error('[Shipment Management API] Error:', error);
     return NextResponse.json({
       success: false,
-      error: error.message || 'Failed to cancel shipment'
+      error: error.message || 'Failed to process shipment deletion/cancellation'
     }, { status: 500 });
   }
 }

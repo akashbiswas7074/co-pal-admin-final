@@ -852,3 +852,24 @@ export const manuallyUpdateOrderStatus = async (
     };
   }
 };
+
+/**
+ * Permanently delete an order by ID
+ */
+export const deleteOrderById = async (orderId: string) => {
+  try {
+    await connectToDatabase();
+    if (!orderId) {
+      return { success: false, message: "Order ID is required" };
+    }
+    const deleted = await Order.findByIdAndDelete(orderId);
+    if (!deleted) {
+      return { success: false, message: "Order not found or already deleted" };
+    }
+    return { success: true, message: `Order #${orderId} deleted successfully` };
+  } catch (error: any) {
+    console.error("Error deleting order:", error);
+    return { success: false, message: error.message || "Failed to delete order" };
+  }
+};
+

@@ -207,22 +207,29 @@ export class ShipmentService {
 
             const rmk = delhiveryResponse.rmk || '';
 
+            // Extract package remarks if available
+            let packageRemarksList: string[] = [];
+            if (delhiveryResponse.packages && Array.isArray(delhiveryResponse.packages)) {
+              for (const pkg of delhiveryResponse.packages) {
+                if (pkg.remarks && Array.isArray(pkg.remarks)) {
+                  packageRemarksList.push(...pkg.remarks);
+                } else if (pkg.remarks && typeof pkg.remarks === 'string') {
+                  packageRemarksList.push(pkg.remarks);
+                }
+              }
+            }
+            const packageRemarkText = packageRemarksList.join('; ');
+
             // Determine specific error message
-            if (rmk.includes('Insufficient Balance') || rmk.includes('insufficient balance')) {
+            if (packageRemarkText.toLowerCase().includes('duplicate order') || rmk.toLowerCase().includes('duplicate order')) {
+              throw new Error('Delhivery rejected order ID as duplicate. Please retry creating the shipment with a new reference.');
+            } else if (rmk.includes('Insufficient Balance') || rmk.includes('insufficient balance') || packageRemarkText.toLowerCase().includes('insufficient balance')) {
               throw new Error('Insufficient balance in Delhivery account. Please recharge your account to continue creating shipments.');
             } else if (rmk.includes('ClientWarehouse matching query does not exist')) {
               throw new Error(`Warehouse "${request.pickupLocation}" is not registered in your Delhivery account. Please register the warehouse first.`);
+            } else if (packageRemarkText) {
+              throw new Error(`Delhivery returned error: ${packageRemarkText}`);
             } else if (rmk.includes('An internal Error has occurred')) {
-              // Check if the error is actually about insufficient balance
-              if (delhiveryResponse.packages && delhiveryResponse.packages.length > 0) {
-                const packageRemarks = delhiveryResponse.packages[0].remarks;
-                if (packageRemarks && Array.isArray(packageRemarks) && packageRemarks.length > 0) {
-                  const remarksText = packageRemarks.join(' ');
-                  if (remarksText.includes('insufficient balance') || remarksText.includes('Insufficient Balance')) {
-                    throw new Error('Insufficient balance in Delhivery account. Please recharge your account to continue creating shipments.');
-                  }
-                }
-              }
               throw new Error('Delhivery is experiencing technical issues. Please try again later.');
             } else {
               throw new Error(rmk || delhiveryResponse.error || 'Delhivery API error');
@@ -362,7 +369,7 @@ export class ShipmentService {
             weight: request.weight || 500,
             dimensions: request.dimensions || { length: 10, width: 10, height: 10 },
             productDescription: 'General Product',
-            paymentMode: this.getPaymentMode(request.shipmentType, order.paymentMethod),
+            paymentMode: this.getPaymentMode(request.shipmentType, order.paymentMethod) === 'COD' ? 'COD' : 'Pre-paid',
             codAmount: order.paymentMethod === 'cod' ? Math.round(shipmentSubtotal) : 0
           },
           delhiveryResponse,
@@ -773,6 +780,99 @@ export class ShipmentService {
   }
 
   /**
+   * Delete a shipment permanently and clean up associated order references
+   */
+  async deleteShipment(identifier: { id?: string; waybill?: string; orderId?: string; deleteOrder?: boolean }) {
+    try {
+      await connectToDatabase();
+      const { id, waybill, orderId, deleteOrder } = identifier;
+
+      let shipmentDoc: any = null;
+      if (id && !id.startsWith('virtual_') && mongoose.Types.ObjectId.isValid(id)) {
+        shipmentDoc = await Shipment.findById(id);
+      }
+      if (!shipmentDoc && waybill && !['Pending Label', 'Not Generated', 'Pending Generation'].includes(waybill)) {
+        shipmentDoc = await Shipment.findOne({
+          $or: [
+            { primaryWaybill: waybill },
+            { waybillNumbers: waybill }
+          ]
+        });
+      }
+      if (!shipmentDoc && orderId && mongoose.Types.ObjectId.isValid(orderId)) {
+        shipmentDoc = await Shipment.findOne({ orderId: new mongoose.Types.ObjectId(orderId) });
+      }
+
+      const targetOrderId = shipmentDoc?.orderId?.toString() || (orderId && mongoose.Types.ObjectId.isValid(orderId) ? orderId : null) || (id?.startsWith('virtual_') ? id.split('_')[1] : null);
+      const waybillToDelete = shipmentDoc?.primaryWaybill || (waybill && !['Pending Label', 'Not Generated', 'Pending Generation'].includes(waybill) ? waybill : null);
+
+      // 1. Delete physical Shipment document if exists
+      if (shipmentDoc) {
+        await Shipment.findByIdAndDelete(shipmentDoc._id);
+        console.log(`[Shipment Service] Deleted Shipment document ${shipmentDoc._id}`);
+      }
+      if (waybillToDelete) {
+        await Shipment.deleteMany({
+          $or: [
+            { primaryWaybill: waybillToDelete },
+            { waybillNumbers: waybillToDelete }
+          ]
+        });
+      }
+      if (targetOrderId && mongoose.Types.ObjectId.isValid(targetOrderId)) {
+        await Shipment.deleteMany({ orderId: new mongoose.Types.ObjectId(targetOrderId) });
+      }
+
+      // 2. Update or delete associated Order
+      if (targetOrderId && mongoose.Types.ObjectId.isValid(targetOrderId)) {
+        const orderObjectId = new mongoose.Types.ObjectId(targetOrderId);
+        if (deleteOrder) {
+          await Order.collection.deleteOne({ _id: orderObjectId });
+          console.log(`[Shipment Service] Permanently deleted Order document ${targetOrderId}`);
+        } else {
+          const order = await Order.findById(targetOrderId);
+          const currentStatus = order?.status;
+          const newStatus = ['Dispatched', 'dispatched'].includes(currentStatus) ? 'Confirmed' : currentStatus;
+
+          await Order.collection.updateOne(
+            { _id: orderObjectId },
+            {
+              $set: {
+                shipmentDismissed: true,
+                shipmentCreated: false,
+                status: newStatus,
+                waybillNumber: null,
+                shipmentDetails: null,
+                reverseShipment: null,
+                replacementShipment: null
+              },
+              $unset: {
+                'orderItems.$[].waybillNumber': '',
+                'orderItems.$[].trackingId': '',
+                'products.$[].waybillNumber': '',
+                'products.$[].trackingId': ''
+              }
+            }
+          );
+          console.log(`[Shipment Service] Dismissed and cleaned order ${targetOrderId} from shipment queue`);
+        }
+      }
+
+      return {
+        success: true,
+        message: deleteOrder ? 'Order and shipment deleted successfully' : 'Shipment deleted successfully',
+        data: { id, waybill: waybillToDelete, orderId: targetOrderId }
+      };
+    } catch (error: any) {
+      console.error('[Shipment Service] Error deleting shipment:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to delete shipment'
+      };
+    }
+  }
+
+  /**
    * Generate shipping label for a waybill
    */
   async generateShippingLabel(waybill: string, options: { pdf?: boolean; pdf_size?: 'A4' | '4R' } = {}) {
@@ -867,32 +967,36 @@ export class ShipmentService {
 
       await connectToDatabase();
 
-      const { page = 1, limit = 10, status, shipmentType, orderId, waybill } = options;
+      const { page = 1, limit = 50, status, shipmentType, orderId, waybill } = options;
       const skip = (page - 1) * limit;
 
-      // Build query
-      const query: any = {}; // Remove isActive: true temporarily to see everything
-      if (options.status || options.waybill || options.orderId) {
-        // If we have filters, apply them
-      } else {
-        // Default to everything
+      // Build query for physical Shipment documents
+      const query: any = {};
+      if (status && status !== 'all') query.status = status;
+      if (shipmentType && shipmentType !== 'all') query.shipmentType = shipmentType;
+      if (orderId) {
+        if (mongoose.Types.ObjectId.isValid(orderId)) {
+          query.orderId = new mongoose.Types.ObjectId(orderId);
+        } else {
+          query.orderId = orderId;
+        }
       }
-
-      if (status) query.status = status;
-      if (shipmentType) query.shipmentType = shipmentType;
-      if (orderId) query.orderId = orderId;
       if (waybill) {
-        query.$or = [
+        const isOid = mongoose.Types.ObjectId.isValid(waybill);
+        const orConds: any[] = [
           { primaryWaybill: { $regex: waybill, $options: 'i' } },
           { waybillNumbers: { $regex: waybill, $options: 'i' } }
         ];
+        if (isOid) {
+          orConds.push({ orderId: new mongoose.Types.ObjectId(waybill) });
+        }
+        query.$or = orConds;
       }
 
       console.log('[Shipment Service] Final MongoDB Query:', JSON.stringify(query));
 
-
       const rawShipments = await Shipment.find(query)
-        .populate('orderId', 'customerName total status paymentMethod shippingAddress orderItems products')
+        .populate('orderId', 'customerName total totalAmount isPaid paymentStatus status paymentMethod shippingAddress deliveryAddress orderItems products createdAt paidAt')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit);
@@ -919,50 +1023,114 @@ export class ShipmentService {
           console.log(`[Shipment Service] FIXED description for ${shipment.primaryWaybill}: ${description}`);
         }
 
+        shipment.shipmentDate = s.createdAt;
+        shipment.orderCreatedAt = order?.createdAt;
+
         return shipment;
       });
 
-      // VIRTUAL SHIPMENTS: Fetch orders that logically have shipments but lack a 'Shipment' document
-      if (!options.waybill) {
-        const virtualOrderQuery = {
-          $or: [
-            { shipmentCreated: true },
-            { 'orderItems.waybillNumber': { $exists: true, $ne: null } },
-            { 'products.waybillNumber': { $exists: true, $ne: null } },
-            { 'orderItems.status': 'Dispatched' },
-            { 'products.status': 'Dispatched' }
+      // VIRTUAL / PENDING ORDERS: Fetch orders that logically have shipments or are paid/confirmed orders awaiting shipment
+      let virtualOrderQuery: any = null;
+      if (options.orderId) {
+        if (mongoose.Types.ObjectId.isValid(options.orderId)) {
+          virtualOrderQuery = { _id: new mongoose.Types.ObjectId(options.orderId) };
+        } else {
+          virtualOrderQuery = { _id: options.orderId };
+        }
+      } else if (options.waybill) {
+        const isOid = mongoose.Types.ObjectId.isValid(options.waybill);
+        const orConds: any[] = [
+          { 'shipmentDetails.waybillNumbers': { $regex: options.waybill, $options: 'i' } },
+          { 'orderItems.waybillNumber': { $regex: options.waybill, $options: 'i' } },
+          { 'products.waybillNumber': { $regex: options.waybill, $options: 'i' } }
+        ];
+        if (isOid) {
+          orConds.push({ _id: new mongoose.Types.ObjectId(options.waybill) });
+        }
+        virtualOrderQuery = { $or: orConds };
+      } else {
+        virtualOrderQuery = {
+          $and: [
+            { shipmentDismissed: { $ne: true } },
+            {
+              $or: [
+                { shipmentCreated: true },
+                { 'shipmentDetails.lastWaybill': { $exists: true, $ne: null } },
+                { isPaid: true, status: { $nin: ['Cancelled', 'cancelled', 'Refunded', 'refunded'] } },
+                { paymentStatus: { $in: ['paid', 'PAID'] }, status: { $nin: ['Cancelled', 'cancelled', 'Refunded', 'refunded'] } },
+                { 'orderItems.waybillNumber': { $exists: true, $ne: null } },
+                { 'products.waybillNumber': { $exists: true, $ne: null } }
+              ]
+            }
           ]
         };
+      }
+
+      if (virtualOrderQuery) {
         const dispatchedOrders = await Order.find(virtualOrderQuery).lean() as any[];
 
         for (const order of dispatchedOrders) {
           // Map items
           const items = (order.orderItems && order.orderItems.length > 0) ? order.orderItems : (order.products || []);
 
-          // Collect all waybills from this order
+          // Collect all waybills from this order (including lastWaybill and history)
           const shipmentDetails = order.shipmentDetails || order.reverseShipment || order.replacementShipment || {};
           const waybillsInOrder = Array.from(new Set([
             ...(shipmentDetails?.waybillNumbers || []),
-            ...items.map((i: any) => i.waybillNumber).filter(Boolean)
-          ])) as string[];
+            ...(shipmentDetails?.history || []).flatMap((h: any) => h?.waybillNumbers || []),
+            shipmentDetails?.lastWaybill,
+            shipmentDetails?.waybill,
+            order.waybillNumber,
+            ...items.map((i: any) => i.waybillNumber || i.trackingId).filter(Boolean)
+          ])).filter(Boolean) as string[];
 
-          // Add a "Pending" entry if no waybills exist but items are dispatched
+          // Add a "Pending Generation" entry if no waybills exist
           if (waybillsInOrder.length === 0) {
-            waybillsInOrder.push('Pending Label');
+            waybillsInOrder.push('Pending Generation');
           }
 
           for (const waybill of waybillsInOrder) {
-            // Check if this specific waybill was already loaded from a real Shipment document
-            const isAlreadyLoaded = shipments.some(s =>
-              s.primaryWaybill === waybill ||
-              (s.waybillNumbers && s.waybillNumbers.includes(waybill))
-            );
+            const isPlaceholder = ['Pending Generation', 'Pending Label', 'Not Generated'].includes(waybill);
+            // Check if this specific waybill or order was already loaded
+            const isAlreadyLoaded = shipments.some(s => {
+              const sOrderId = s.orderId?._id?.toString() || s.orderId?.toString();
+              const thisOrderId = order._id.toString();
+
+              if (isPlaceholder) {
+                // For pending/placeholder entries, only mark as loaded if THIS specific order already has an entry
+                return sOrderId === thisOrderId;
+              }
+
+              // For real waybills, check if waybill matches or order already has a real shipment document
+              if (s.primaryWaybill === waybill || (s.waybillNumbers && s.waybillNumbers.includes(waybill))) {
+                return true;
+              }
+              if (sOrderId === thisOrderId && !['Pending Generation', 'Pending Label', 'Not Generated'].includes(s.primaryWaybill)) {
+                return true;
+              }
+              return false;
+            });
 
             if (!isAlreadyLoaded) {
-              const shippingAddress = order.shippingAddress || {};
+              const shippingAddress = order.shippingAddress || order.deliveryAddress || {};
               // For virtual rows, try to find which item this waybill belongs to for the description
               const matchingItem = items.find((i: any) => i.waybillNumber === waybill);
-              const description = matchingItem?.name || items[0]?.name || 'General Category';
+              const description = matchingItem?.name || items.map((i: any) => i.name).filter(Boolean).join(', ') || 'General Category';
+
+              // Determine status
+              let virtStatus = 'Pending';
+              if (waybill && !isPlaceholder) {
+                virtStatus = 'Manifested';
+                if (order.status) {
+                  virtStatus = order.status;
+                }
+              } else if (['dispatched', 'shipped'].includes(order.status?.toLowerCase())) {
+                virtStatus = 'Manifested';
+              } else if (order.shipmentCreated) {
+                virtStatus = 'Created';
+              } else if (order.isPaid || order.paymentStatus === 'paid') {
+                virtStatus = 'Pending';
+              }
 
               shipments.push({
                 _id: `virtual_${order._id}_${waybill}`,
@@ -970,7 +1138,7 @@ export class ShipmentService {
                 waybillNumbers: [waybill],
                 primaryWaybill: waybill,
                 shipmentType: shipmentDetails.shipmentType || 'FORWARD',
-                status: order.status === 'Dispatched' ? 'Registered' : 'Pending',
+                status: virtStatus,
                 pickupLocation: shipmentDetails.pickupLocation || 'Main Warehouse',
                 warehouse: {
                   name: shipmentDetails.pickupLocation || 'Main Warehouse',
@@ -979,7 +1147,7 @@ export class ShipmentService {
                   phone: '--'
                 },
                 customerDetails: {
-                  name: `${shippingAddress.firstName || ''} ${shippingAddress.lastName || ''}`.trim() || 'Customer',
+                  name: `${shippingAddress.firstName || ''} ${shippingAddress.lastName || ''}`.trim() || order.customerName || 'Customer',
                   phone: shippingAddress.phoneNumber || shippingAddress.phone || '--',
                   address: `${shippingAddress.address1 || ''} ${shippingAddress.address2 || ''}`.trim() || '--',
                   city: shippingAddress.city || '--',
@@ -993,8 +1161,10 @@ export class ShipmentService {
                   paymentMode: order.paymentMethod?.toUpperCase() === 'COD' ? 'COD' : 'Pre-paid',
                   codAmount: order.paymentMethod?.toUpperCase() === 'COD' ? (order.total || order.totalAmount || 0) : 0
                 },
-                createdAt: shipmentDetails.createdAt || order.updatedAt || order.createdAt || new Date(),
-                updatedAt: order.updatedAt || order.createdAt || new Date()
+                createdAt: (shipmentDetails.history && shipmentDetails.history[0]?.createdAt) || shipmentDetails.createdAt || order.createdAt || new Date(),
+                updatedAt: order.updatedAt || order.createdAt || new Date(),
+                shipmentDate: (shipmentDetails.history && shipmentDetails.history[0]?.createdAt) || shipmentDetails.createdAt || (waybill && !isPlaceholder ? (order.updatedAt || order.createdAt) : null),
+                orderCreatedAt: order.createdAt
               } as any);
             }
           }
@@ -1229,35 +1399,34 @@ export class ShipmentService {
     try {
       await connectToDatabase();
 
-      // Get shipment from our database for current state validation
-      const shipment = await Shipment.findOne({
+      // Get shipment or order from our database
+      let shipment = await Shipment.findOne({
         $or: [
           { primaryWaybill: waybill },
           { waybillNumbers: waybill }
         ]
       });
 
-      if (!shipment) {
+      let order: any = null;
+      if (shipment?.orderId) {
+        order = await Order.findById(shipment.orderId);
+      } else {
+        order = await Order.findOne({
+          $or: [
+            { 'shipmentDetails.lastWaybill': waybill },
+            { 'shipmentDetails.waybillNumbers': waybill },
+            { 'shipmentDetails.history.waybillNumbers': waybill },
+            { waybillNumber: waybill },
+            { 'orderItems.waybillNumber': waybill },
+            { 'products.waybillNumber': waybill }
+          ]
+        });
+      }
+
+      if (!shipment && !order) {
         return {
           success: false,
           error: 'Shipment not found in database'
-        };
-      }
-
-      // Check shipment status for edit eligibility
-      const allowedEditStatuses = [
-        'CREATED',
-        'Created',
-        'PENDING',
-        'PICKUP_PENDING',
-        'PICKUP_SCHEDULED',
-        'MANIFEST_GENERATED'
-      ];
-
-      if (shipment.status && !allowedEditStatuses.includes(shipment.status)) {
-        return {
-          success: false,
-          error: `Shipment cannot be edited in current status: ${shipment.status}. Allowed statuses: ${allowedEditStatuses.join(', ')}`
         };
       }
 
@@ -1333,40 +1502,82 @@ export class ShipmentService {
         // Call Delhivery edit API with enhanced validation
         const result = await delhiveryAPI.editShipment(editPayload);
 
-        // If Delhivery API call was successful, update our database
-        if (result.success) {
-          // Update relevant fields in our database
-          if (updateData.name) shipment.customerDetails.name = updateData.name;
-          if (updateData.phone && updateData.phone.length > 0) {
-            shipment.customerDetails.phone = updateData.phone[0];
-          }
-          if (updateData.add) shipment.customerDetails.address = updateData.add;
-          if (updateData.weight) shipment.packageDetails.weight = updateData.weight;
-          if (updateData.products_desc) {
-            shipment.packageDetails.productDescription = updateData.products_desc;
-          }
-          if (updateData.pt) shipment.packageDetails.paymentMode = updateData.pt;
-          if (updateData.cod !== undefined) shipment.packageDetails.codAmount = updateData.cod;
+        // If Delhivery API call was successful or handled, update our database
+        if (result.success || !delhiveryAPI.isConfigured()) {
+          // Update relevant fields in physical shipment if exists
+          if (shipment) {
+            if (updateData.name) {
+              if (!shipment.customerDetails) shipment.customerDetails = {} as any;
+              shipment.customerDetails.name = updateData.name;
+            }
+            if (updateData.phone && updateData.phone.length > 0) {
+              if (!shipment.customerDetails) shipment.customerDetails = {} as any;
+              shipment.customerDetails.phone = updateData.phone[0];
+            }
+            if (updateData.add) {
+              if (!shipment.customerDetails) shipment.customerDetails = {} as any;
+              shipment.customerDetails.address = updateData.add;
+            }
+            if (updateData.weight) {
+              if (!shipment.packageDetails) shipment.packageDetails = {} as any;
+              shipment.packageDetails.weight = updateData.weight;
+            }
+            if (updateData.products_desc) {
+              if (!shipment.packageDetails) shipment.packageDetails = {} as any;
+              shipment.packageDetails.productDescription = updateData.products_desc;
+            }
+            if (updateData.pt) {
+              if (!shipment.packageDetails) shipment.packageDetails = {} as any;
+              shipment.packageDetails.paymentMode = updateData.pt;
+            }
+            if (updateData.cod !== undefined) {
+              if (!shipment.packageDetails) shipment.packageDetails = {} as any;
+              shipment.packageDetails.codAmount = updateData.cod;
+            }
 
-          if (updateData.shipment_height || updateData.shipment_width || updateData.shipment_length) {
-            if (!shipment.packageDetails.dimensions) {
-              shipment.packageDetails.dimensions = {};
+            if (updateData.shipment_height || updateData.shipment_width || updateData.shipment_length) {
+              if (!shipment.packageDetails) shipment.packageDetails = {} as any;
+              if (!shipment.packageDetails.dimensions) {
+                shipment.packageDetails.dimensions = {};
+              }
+              if (updateData.shipment_height) {
+                shipment.packageDetails.dimensions.height = updateData.shipment_height;
+              }
+              if (updateData.shipment_width) {
+                shipment.packageDetails.dimensions.width = updateData.shipment_width;
+              }
+              if (updateData.shipment_length) {
+                shipment.packageDetails.dimensions.length = updateData.shipment_length;
+              }
             }
-            if (updateData.shipment_height) {
-              shipment.packageDetails.dimensions.height = updateData.shipment_height;
-            }
-            if (updateData.shipment_width) {
-              shipment.packageDetails.dimensions.width = updateData.shipment_width;
-            }
-            if (updateData.shipment_length) {
-              shipment.packageDetails.dimensions.length = updateData.shipment_length;
-            }
+
+            shipment.updatedAt = new Date();
+            await shipment.save();
           }
 
-          // Update timestamp
-          shipment.updatedAt = new Date();
-
-          await shipment.save();
+          // Update order if exists
+          if (order) {
+            const orderUpdates: any = {};
+            if (updateData.name) {
+              orderUpdates['shippingAddress.firstName'] = updateData.name;
+              orderUpdates['deliveryAddress.firstName'] = updateData.name;
+            }
+            if (updateData.add) {
+              orderUpdates['shippingAddress.address1'] = updateData.add;
+              orderUpdates['deliveryAddress.address1'] = updateData.add;
+            }
+            if (updateData.phone && updateData.phone.length > 0) {
+              orderUpdates['shippingAddress.phoneNumber'] = updateData.phone[0];
+              orderUpdates['deliveryAddress.phoneNumber'] = updateData.phone[0];
+              orderUpdates['deliveryAddress.phone'] = updateData.phone[0];
+            }
+            if (Object.keys(orderUpdates).length > 0) {
+              await Order.collection.updateOne(
+                { _id: order._id },
+                { $set: orderUpdates }
+              );
+            }
+          }
           console.log('[Shipment Service] Shipment updated successfully:', waybill);
 
           return {
@@ -1453,15 +1664,31 @@ export class ShipmentService {
     try {
       await connectToDatabase();
 
-      // First check if shipment exists in our database
-      const shipment = await Shipment.findOne({
+      // Check both Shipment document and Order document
+      let shipment = await Shipment.findOne({
         $or: [
           { primaryWaybill: waybill },
           { waybillNumbers: waybill }
         ]
       });
 
-      if (!shipment) {
+      let order: any = null;
+      if (shipment?.orderId) {
+        order = await Order.findById(shipment.orderId);
+      } else {
+        order = await Order.findOne({
+          $or: [
+            { 'shipmentDetails.lastWaybill': waybill },
+            { 'shipmentDetails.waybillNumbers': waybill },
+            { 'shipmentDetails.history.waybillNumbers': waybill },
+            { waybillNumber: waybill },
+            { 'orderItems.waybillNumber': waybill },
+            { 'products.waybillNumber': waybill }
+          ]
+        });
+      }
+
+      if (!shipment && !order) {
         return {
           success: false,
           error: `Shipment with waybill ${waybill} not found in our records`
@@ -1469,7 +1696,7 @@ export class ShipmentService {
       }
 
       // Check if already cancelled
-      if (shipment.status === 'Cancelled') {
+      if ((shipment && shipment.status === 'Cancelled') || (order && order.status === 'Cancelled')) {
         return {
           success: true,
           message: 'Shipment is already cancelled',
@@ -1477,67 +1704,42 @@ export class ShipmentService {
         };
       }
 
-      if (!delhiveryAPI.isConfigured()) {
-        // If Delhivery API is not configured, just update our database
+      // Try Delhivery API cancellation if configured
+      if (delhiveryAPI.isConfigured()) {
+        try {
+          await delhiveryAPI.cancelShipment(waybill);
+          console.log('[Shipment Service] Delhivery API cancelled shipment:', waybill);
+        } catch (delhiveryError: any) {
+          console.warn('[Shipment Service] Delhivery cancellation warning:', delhiveryError.message);
+        }
+      }
+
+      // Update Shipment document if exists
+      if (shipment) {
         shipment.status = 'Cancelled';
         shipment.updatedAt = new Date();
         await shipment.save();
-
-        return {
-          success: true,
-          message: 'Shipment cancelled in local database (Delhivery API not configured)',
-          waybill,
-          localOnly: true
-        };
       }
 
-      try {
-        // Call Delhivery cancel API
-        const success = await delhiveryAPI.cancelShipment(waybill);
-
-        if (success) {
-          // Update shipment status in our database
-          shipment.status = 'Cancelled';
-          shipment.updatedAt = new Date();
-          await shipment.save();
-          console.log('[Shipment Service] Shipment cancelled successfully:', waybill);
-
-          return {
-            success: true,
-            message: 'Shipment cancelled successfully',
-            waybill
-          };
-        } else {
-          return {
-            success: false,
-            error: 'Delhivery API returned failure for cancellation'
-          };
-        }
-      } catch (delhiveryError: any) {
-        console.warn('[Shipment Service] Delhivery cancellation failed:', delhiveryError.message);
-
-        // If Delhivery API fails but shipment exists in our DB, offer local cancellation
-        if (delhiveryError.message.includes('not found') || delhiveryError.message.includes('404')) {
-          // Shipment might not exist on Delhivery side, cancel locally
-          shipment.status = 'Cancelled';
-          shipment.updatedAt = new Date();
-          await shipment.save();
-
-          return {
-            success: true,
-            message: 'Shipment cancelled locally (not found on Delhivery)',
-            waybill,
-            warning: 'Shipment was not found on Delhivery servers, but cancelled in our database'
-          };
-        }
-
-        // For other errors, return the error but don't update local status
-        return {
-          success: false,
-          error: `Failed to cancel shipment: ${delhiveryError.message}`,
-          suggestion: 'You may need to contact Delhivery support directly or try again later'
-        };
+      // Update Order document if exists
+      if (order) {
+        await Order.collection.updateOne(
+          { _id: order._id },
+          {
+            $set: {
+              status: 'Cancelled',
+              'orderItems.$[].status': 'Cancelled',
+              'products.$[].status': 'Cancelled'
+            }
+          }
+        );
       }
+
+      return {
+        success: true,
+        message: 'Shipment cancelled successfully',
+        waybill
+      };
     } catch (error: any) {
       console.error('[Shipment Service] Error cancelling shipment:', error);
       return {
@@ -1863,7 +2065,10 @@ export class ShipmentService {
 
     // Create unique order reference for Delhivery (avoiding "Duplicate Order" error)
     // Use sequential numbering (S1, S2, etc.) for multiple shipments on same order
-    const suffix = `_S${shipmentNumber}`;
+    // Suffix with a short timestamp to ensure retries or recreations never collide with Delhivery's live cache
+    const timeSuffix = Math.floor(Date.now() / 1000).toString().slice(-4);
+    const pkgSuffix = packageIndex !== undefined ? `_P${packageIndex + 1}` : '';
+    const suffix = `_S${shipmentNumber}${pkgSuffix}_${timeSuffix}`;
     const finalOrderRef = `${order._id.toString()}${suffix}`;
 
     // Use pre-calculated selected items or filter now
@@ -1982,15 +2187,22 @@ export class ShipmentService {
       const waybillNumbers = shipmentDetails.waybillNumbers || [];
       const primaryWaybill = waybillNumbers[0];
 
+      const existingHistory = Array.isArray(order.shipmentDetails?.history) ? order.shipmentDetails.history : [];
+      const updatedHistory = [...existingHistory, shipmentDetails];
+      const existingWaybills = Array.isArray(order.shipmentDetails?.waybillNumbers) ? order.shipmentDetails.waybillNumbers : [];
+
       switch (shipmentType) {
         case 'FORWARD':
         case 'MPS':
           updateData.$set.shipmentCreated = true;
-          updateData.$set['shipmentDetails.lastWaybill'] = primaryWaybill;
-          updateData.$set['shipmentDetails.shippingMode'] = shipmentDetails.shippingMode;
-          updateData.$set['shipmentDetails.pickupLocation'] = shipmentDetails.pickupLocation;
-          
-          updateData.$push = { 'shipmentDetails.history': shipmentDetails };
+          updateData.$set.shipmentDetails = {
+            ...(typeof order.shipmentDetails === 'object' && order.shipmentDetails !== null ? order.shipmentDetails : {}),
+            lastWaybill: primaryWaybill,
+            shippingMode: shipmentDetails.shippingMode,
+            pickupLocation: shipmentDetails.pickupLocation,
+            waybillNumbers: Array.from(new Set([...existingWaybills, ...waybillNumbers])),
+            history: updatedHistory
+          };
 
           // Determine items to update
           const hasSpecificSelection = selectedItemIds && selectedItemIds.length > 0;

@@ -28,9 +28,14 @@ interface ShipmentStats {
 interface ShipmentDashboardProps {
   selectedOrderId?: string;
   preSelectedItemId?: string;
+  onNavigateToShipments?: () => void;
 }
 
-export default function ShipmentDashboard({ selectedOrderId: propSelectedOrderId, preSelectedItemId }: ShipmentDashboardProps = {}) {
+export default function ShipmentDashboard({ 
+  selectedOrderId: propSelectedOrderId, 
+  preSelectedItemId,
+  onNavigateToShipments 
+}: ShipmentDashboardProps = {}) {
   const [stats, setStats] = useState<ShipmentStats>({
     total: 0,
     pending: 0,
@@ -194,6 +199,11 @@ export default function ShipmentDashboard({ selectedOrderId: propSelectedOrderId
               preSelectedItemId={preSelectedItemId}
               onShipmentCreated={() => {
                 fetchStats();
+                if (onNavigateToShipments) {
+                  onNavigateToShipments();
+                } else {
+                  window.location.href = '/admin/dashboard/shipment?tab=shipments';
+                }
               }}
             />
           ) : (

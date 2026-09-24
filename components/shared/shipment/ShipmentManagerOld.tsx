@@ -855,11 +855,6 @@ export function ShipmentManager({ orderId, onShipmentCreated, className }: Shipm
     </div>
   );
 }
-    width: number;
-    height: number;
-  };
-  pickupLocation: string;
-}
 
 interface ShipmentManagerProps {
   orderId: string;
