@@ -396,3 +396,36 @@
 .image-error {
   @apply bg-gray-50 border-2 border-dashed border-gray-300;
 }
+
+/* iOS Safari & WebKit Touch Delegation for Admin */
+button,
+a,
+input,
+select,
+textarea,
+label,
+summary,
+[role="button"],
+[role="tab"],
+[tabindex]:not([tabindex="-1"]),
+.cursor-pointer {
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent auto-zoom on focus in iOS Safari */
+@media (max-width: 768px) {
+  input[type="text"],
+  input[type="password"],
+  input[type="email"],
+  input[type="number"],
+  input[type="tel"],
+  input[type="search"],
+  input[type="url"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
